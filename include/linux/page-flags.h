@@ -232,6 +232,9 @@ static inline void page_init_poison(struct page *page, size_t size)
  *
  * PF_NO_COMPOUND:
  *     the page flag is not relevant for compound pages.
+ *
+ * PF_THIRD:
+ *     the page flag is stored in the second tail page.
  */
 #define PF_POISONED_CHECK(page) ({					\
 		VM_BUG_ON_PGFLAGS(PagePoisoned(page), page);		\
@@ -247,6 +250,9 @@ static inline void page_init_poison(struct page *page, size_t size)
 #define PF_NO_COMPOUND(page, enforce) ({				\
 		VM_BUG_ON_PGFLAGS(enforce && PageCompound(page), page);	\
 		PF_POISONED_CHECK(page); })
+#define PF_THIRD(page, enforce) ({					\
+		VM_BUG_ON_PGFLAGS(!PageHead(page), page);		\
+		PF_POISONED_CHECK(&page[2]); })
 
 /*
  * Macros to create function definitions for page flags
@@ -672,6 +678,30 @@ static inline int PageTransTail(struct page *page)
 	return PageTail(page);
 }
 
+#define HPAGE_PMD_SHIFT PMD_SHIFT
+#define HPAGE_PMD_ORDER (HPAGE_PMD_SHIFT-PAGE_SHIFT)
+#define HPAGE_PMD_NR (1<<HPAGE_PMD_ORDER)
+
+#define HPAGE_PUD_SHIFT PUD_SHIFT
+#define HPAGE_PUD_ORDER (HPAGE_PUD_SHIFT-PAGE_SHIFT)
+#define HPAGE_PUD_NR (1<<HPAGE_PUD_ORDER)
+
+static inline unsigned int compound_order(struct page *page)
+{
+	if (!PageHead(page))
+		return 0;
+	return page[1].compound_order;
+}
+
+
+static inline int PMDPageInPUD(struct page *page)
+{
+	struct page *head = compound_head(page);
+
+	return (PageCompound(page) && compound_order(head) == HPAGE_PUD_ORDER &&
+		((page - head) % HPAGE_PMD_NR == 0));
+}
+
 /*
  * PageDoubleMap indicates that the compound page is mapped with PTEs as well
  * as PMDs.
@@ -713,14 +743,32 @@ static inline int TestClearPageDoubleMap(struct page *page)
 	return test_and_clear_bit(PG_double_map, &page[1].flags);
 }
 
+/*
+ * PagePUDDoubleMap indicates that the compound page is mapped with PMDs as well
+ * as PUDs.
+ *
+ * This is required for optimization of rmap operations for THP: we can postpone
+ * per small page mapcount accounting (and its overhead from atomic operations)
+ * until the first PUD split.
+ *
+ * For the page PagePUDDoubleMap means ->_mapcount in all sub-PMD pages is
+ * offset up by one. This reference will go away with last sub_compound_mapcount.
+ *
+ * See also __split_huge_pud_locked() and page_remove_anon_compound_rmap().
+ */
+PAGEFLAG(PUDDoubleMap, double_map, PF_THIRD)
+	TESTSCFLAG(PUDDoubleMap, double_map, PF_THIRD)
 #else
 TESTPAGEFLAG_FALSE(TransHuge)
 TESTPAGEFLAG_FALSE(TransCompound)
 TESTPAGEFLAG_FALSE(TransCompoundMap)
 TESTPAGEFLAG_FALSE(TransTail)
+TESTPAGEFLAG_FALSE(PMDPageInPUD)
 PAGEFLAG_FALSE(DoubleMap)
 	TESTSETFLAG_FALSE(DoubleMap)
 	TESTCLEARFLAG_FALSE(DoubleMap)
+PAGEFLAG_FALSE(PUDDoubleMap)
+	TESTSETFLAG_FALSE(PUDDoubleMap)
 #endif
 
 /*
