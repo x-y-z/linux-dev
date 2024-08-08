@@ -408,9 +408,13 @@ __always_inline unsigned long get_pfnblock_bits(const struct page *page,
 __always_inline enum migratetype
 get_pfnblock_migratetype(const struct page *page, unsigned long pfn)
 {
-	unsigned long flags =
-		get_pfnblock_flags_mask(page, pfn, MIGRATETYPE_MASK);
+	unsigned long flags = get_pfnblock_flags_mask(
+		page, pfn, MIGRATETYPE_MASK | PB_migrate_isolate_bit);
 
+#ifdef CONFIG_MEMORY_ISOLATION
+	if (flags & PB_migrate_isolate_bit)
+		return MIGRATE_ISOLATE;
+#endif
 	return (enum migratetype)flags;
 }
 
@@ -428,8 +432,14 @@ static void set_pfnblock_flags_mask(struct page *page, unsigned long flags,
 	unsigned long bitidx, word_bitidx;
 	unsigned long word;
 
+#ifdef CONFIG_MEMORY_ISOLATION
+	BUILD_BUG_ON(NR_PAGEBLOCK_BITS != 8);
+	/* extra one for MIGRATE_ISOLATE */
+	BUILD_BUG_ON(MIGRATE_TYPES > (1 << PB_migratetype_bits) + 1);
+#else
 	BUILD_BUG_ON(NR_PAGEBLOCK_BITS != 4);
 	BUILD_BUG_ON(MIGRATE_TYPES > (1 << PB_migratetype_bits));
+#endif
 
 	bitmap = get_pageblock_bitmap(page, pfn);
 	bitidx = pfn_to_bitidx(page, pfn);
@@ -484,6 +494,15 @@ void set_pageblock_migratetype(struct page *page, enum migratetype migratetype)
 		     migratetype < MIGRATE_PCPTYPES))
 		migratetype = MIGRATE_UNMOVABLE;
 
+#ifdef CONFIG_MEMORY_ISOLATION
+	if (migratetype == MIGRATE_ISOLATE) {
+		set_pfnblock_bits(page, page_to_pfn(page),
+				  PB_migrate_isolate_bit);
+		return;
+	} else
+		clear_pfnblock_bits(page, page_to_pfn(page),
+				  PB_migrate_isolate_bit);
+#endif
 	set_pfnblock_flags_mask(page, (unsigned long)migratetype,
 				page_to_pfn(page), MIGRATETYPE_MASK);
 }
