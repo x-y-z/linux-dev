@@ -2726,7 +2726,7 @@ static int madvise_collapse_errno(enum scan_result r)
 }
 
 int madvise_collapse(struct vm_area_struct *vma, struct vm_area_struct **prev,
-		     unsigned long start, unsigned long end)
+		     unsigned long start, unsigned long end, unsigned int flags)
 {
 	struct collapse_control *cc;
 	struct mm_struct *mm = vma->vm_mm;
@@ -2746,6 +2746,11 @@ int madvise_collapse(struct vm_area_struct *vma, struct vm_area_struct **prev,
 	if (!cc)
 		return -ENOMEM;
 	cc->is_khugepaged = false;
+
+	if (BIT(5) & flags)
+		cc->hugepage_order = 5;
+	else
+		cc->hugepage_order = HPAGE_PMD_ORDER;
 
 	mmgrab(mm);
 	lru_add_drain_all();

@@ -48,6 +48,11 @@ struct madvise_walk_private {
 	bool pageout;
 };
 
+struct madvise_vma_private {
+	unsigned long behavior;
+	unsigned int flags;
+};
+
 /*
  * Any behaviour which results in changes to the vma->vm_flags needs to
  * take mmap_lock for writing. Others, which simply traverse vmas, need
@@ -1241,11 +1246,14 @@ static long madvise_guard_remove(struct vm_area_struct *vma,
 static int madvise_vma_behavior(struct vm_area_struct *vma,
 				struct vm_area_struct **prev,
 				unsigned long start, unsigned long end,
-				unsigned long behavior)
+				unsigned long arg)
 {
 	int error;
 	struct anon_vma_name *anon_name;
 	unsigned long new_flags = vma->vm_flags;
+	struct madvise_vma_private *param = (struct madvise_vma_private *)arg;
+	unsigned long behavior = param->behavior;
+	unsigned int flags = param->flags;
 
 	if (unlikely(!can_modify_vma_madv(vma, behavior)))
 		return -EPERM;
@@ -1313,7 +1321,7 @@ static int madvise_vma_behavior(struct vm_area_struct *vma,
 			goto out;
 		break;
 	case MADV_COLLAPSE:
-		return madvise_collapse(vma, prev, start, end);
+		return madvise_collapse(vma, prev, start, end, flags);
 	case MADV_GUARD_INSTALL:
 		return madvise_guard_install(vma, prev, start, end);
 	case MADV_GUARD_REMOVE:
@@ -1632,7 +1640,7 @@ int madvise_set_anon_name(struct mm_struct *mm, unsigned long start,
  *  -EAGAIN - a kernel resource was temporarily unavailable.
  *  -EPERM  - memory is sealed.
  */
-int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int behavior)
+int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int behavior, unsigned int flags)
 {
 	unsigned long end;
 	int error;
@@ -1681,8 +1689,13 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 		error = madvise_populate(mm, start, end, behavior);
 		break;
 	default:
-		error = madvise_walk_vmas(mm, start, end, behavior,
-					  madvise_vma_behavior);
+		{
+			struct madvise_vma_private arg = {.behavior = behavior,
+							  .flags = flags};
+			error = madvise_walk_vmas(mm, start, end,
+						  (unsigned long)&arg,
+						  madvise_vma_behavior);
+		}
 		break;
 	}
 	blk_finish_plug(&plug);
@@ -1697,12 +1710,12 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 
 SYSCALL_DEFINE3(madvise, unsigned long, start, size_t, len_in, int, behavior)
 {
-	return do_madvise(current->mm, start, len_in, behavior);
+	return do_madvise(current->mm, start, len_in, behavior, 0);
 }
 
 /* Perform an madvise operation over a vector of addresses and lengths. */
 static ssize_t vector_madvise(struct mm_struct *mm, struct iov_iter *iter,
-			      int behavior)
+			      int behavior, unsigned int flags)
 {
 	ssize_t ret = 0;
 	size_t total_len;
@@ -1711,7 +1724,7 @@ static ssize_t vector_madvise(struct mm_struct *mm, struct iov_iter *iter,
 
 	while (iov_iter_count(iter)) {
 		ret = do_madvise(mm, (unsigned long)iter_iov_addr(iter),
-				 iter_iov_len(iter), behavior);
+				 iter_iov_len(iter), behavior, flags);
 		/*
 		 * An madvise operation is attempting to restart the syscall,
 		 * but we cannot proceed as it would not be correct to repeat
@@ -1750,7 +1763,7 @@ SYSCALL_DEFINE5(process_madvise, int, pidfd, const struct iovec __user *, vec,
 	struct mm_struct *mm;
 	unsigned int f_flags;
 
-	if (flags != 0) {
+	if (behavior != MADV_COLLAPSE && flags != 0) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1791,7 +1804,7 @@ SYSCALL_DEFINE5(process_madvise, int, pidfd, const struct iovec __user *, vec,
 		goto release_mm;
 	}
 
-	ret = vector_madvise(mm, &iter, behavior);
+	ret = vector_madvise(mm, &iter, behavior, flags);
 
 release_mm:
 	mmput(mm);
