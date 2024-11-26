@@ -779,6 +779,40 @@ static int __migrate_folio(struct address_space *mapping, struct folio *dst,
 	return MIGRATEPAGE_SUCCESS;
 }
 
+static int __migrate_folio_prep(struct address_space *mapping, struct folio *dst,
+			   struct folio *src)
+{
+	int expected_count = folio_expected_refs(mapping, src);
+
+	/* Check whether src does not have extra refs before we do more work */
+	if (folio_ref_count(src) != expected_count)
+		return -EAGAIN;
+
+	return MIGRATEPAGE_SUCCESS;
+}
+
+static int __migrate_folio_finalize(struct address_space *mapping, struct folio *dst,
+			   struct folio *src, void *src_private)
+{
+	int rc;
+	unsigned long dst_private = (unsigned long)dst->private;
+	int expected_count = folio_expected_refs(mapping, src);
+
+	dst->private = 0;
+
+	rc = __folio_migrate_mapping(mapping, dst, src, expected_count);
+	if (rc != MIGRATEPAGE_SUCCESS)
+		return rc;
+
+	if (src_private)
+		folio_attach_private(dst, folio_detach_private(src));
+
+	folio_migrate_flags(dst, src);
+
+	src->private = (void*)dst_private;
+	return MIGRATEPAGE_SUCCESS;
+}
+
 /**
  * migrate_folio() - Simple folio migration.
  * @mapping: The address_space containing the folio.
@@ -798,6 +832,20 @@ int migrate_folio(struct address_space *mapping, struct folio *dst,
 	return __migrate_folio(mapping, dst, src, NULL, mode);
 }
 EXPORT_SYMBOL(migrate_folio);
+
+int migrate_folio_prep(struct address_space *mapping, struct folio *dst,
+		  struct folio *src)
+{
+	BUG_ON(folio_test_writeback(src));	/* Writeback must be complete */
+	return __migrate_folio_prep(mapping, dst, src);
+}
+
+int migrate_folio_finalize(struct address_space *mapping, struct folio *dst,
+		  struct folio *src)
+{
+	return __migrate_folio_finalize(mapping, dst, src, NULL);
+}
+
 
 #ifdef CONFIG_BUFFER_HEAD
 /* Returns true if all buffers are successfully locked */
@@ -953,6 +1001,18 @@ int filemap_migrate_folio(struct address_space *mapping,
 }
 EXPORT_SYMBOL_GPL(filemap_migrate_folio);
 
+int filemap_migrate_folio_prep(struct address_space *mapping,
+		struct folio *dst, struct folio *src)
+{
+	return __migrate_folio_prep(mapping, dst, src);
+}
+
+int filemap_migrate_folio_finalize(struct address_space *mapping,
+		struct folio *dst, struct folio *src)
+{
+	return __migrate_folio_finalize(mapping, dst, src, folio_get_private(src));
+}
+
 /*
  * Writeback a folio to clean the dirty state
  */
@@ -1019,6 +1079,36 @@ static int fallback_migrate_folio(struct address_space *mapping,
 		return mode == MIGRATE_SYNC ? -EAGAIN : -EBUSY;
 
 	return migrate_folio(mapping, dst, src, mode);
+}
+
+static int fallback_migrate_folio_prep(struct address_space *mapping,
+		struct folio *dst, struct folio *src, enum migrate_mode mode)
+{
+	if (folio_test_dirty(src)) {
+		/* Only writeback folios in full synchronous migration */
+		switch (mode) {
+		case MIGRATE_SYNC:
+			break;
+		default:
+			return -EBUSY;
+		}
+		return writeout(mapping, src);
+	}
+
+	/*
+	 * Buffers may be managed in a filesystem specific way.
+	 * We must have no buffers or drop them.
+	 */
+	if (!filemap_release_folio(src, GFP_KERNEL))
+		return mode == MIGRATE_SYNC ? -EAGAIN : -EBUSY;
+
+	return migrate_folio_prep(mapping, dst, src);
+}
+
+static int fallback_migrate_folio_finalize(struct address_space *mapping,
+		struct folio *dst, struct folio *src, enum migrate_mode mode)
+{
+	return migrate_folio_finalize(mapping, dst, src);
 }
 
 /*
@@ -1111,6 +1201,91 @@ out:
 }
 
 /*
+ * Move a page to a newly allocated page
+ * The page is locked and all ptes have been successfully removed.
+ *
+ * The new page will have replaced the old page if this function
+ * is successful.
+ *
+ * Return value:
+ *   < 0 - error code
+ *  MIGRATEPAGE_SUCCESS - success
+ */
+static int move_to_new_folio_prep(struct folio *dst, struct folio *src,
+				enum migrate_mode mode)
+{
+	int rc = -EAGAIN;
+	bool is_lru = !__folio_test_movable(src);
+
+	VM_BUG_ON_FOLIO(!folio_test_locked(src), src);
+	VM_BUG_ON_FOLIO(!folio_test_locked(dst), dst);
+
+	if (likely(is_lru)) {
+		struct address_space *mapping = folio_mapping(src);
+
+		if (!mapping)
+			rc = migrate_folio_prep(mapping, dst, src);
+		else if (mapping_inaccessible(mapping))
+			rc = -EOPNOTSUPP;
+		else if (mapping->a_ops->migrate_folio == buffer_migrate_folio ||
+			 mapping->a_ops->migrate_folio == buffer_migrate_folio_norefs)
+			rc = -EAGAIN;
+		else if (!mapping->a_ops->migrate_folio)
+			rc = fallback_migrate_folio_prep(mapping, dst, src, mode);
+		else if (mapping->a_ops->migrate_folio_prep)
+			/*
+			 * Most folios have a mapping and most filesystems
+			 * provide a migrate_folio callback. Anonymous folios
+			 * are part of swap space which also has its own
+			 * migrate_folio callback. This is the most common path
+			 * for page migration.
+			 */
+			rc = mapping->a_ops->migrate_folio_prep(mapping, dst, src);
+		else
+			rc = -EAGAIN;
+	} else
+		rc = -EAGAIN;
+	return rc;
+}
+
+static int move_to_new_folio_finalize(struct folio *dst, struct folio *src,
+				enum migrate_mode mode)
+{
+	int rc = -EAGAIN;
+	bool is_lru = !__folio_test_movable(src);
+
+	VM_BUG_ON_FOLIO(!folio_test_locked(src), src);
+	VM_BUG_ON_FOLIO(!folio_test_locked(dst), dst);
+
+	if (likely(is_lru)) {
+		struct address_space *mapping = folio_mapping(src);
+
+		if (!mapping)
+			rc = migrate_folio_finalize(mapping, dst, src);
+		else if (mapping_inaccessible(mapping))
+			rc = -EOPNOTSUPP;
+		else if (mapping->a_ops->migrate_folio == buffer_migrate_folio ||
+			 mapping->a_ops->migrate_folio == buffer_migrate_folio_norefs)
+			rc = -EOPNOTSUPP;
+		else if (!mapping->a_ops->migrate_folio)
+			rc = fallback_migrate_folio_finalize(mapping, dst, src, mode);
+		else if (mapping->a_ops->migrate_folio_finalize)
+			/*
+			 * Most folios have a mapping and most filesystems
+			 * provide a migrate_folio callback. Anonymous folios
+			 * are part of swap space which also has its own
+			 * migrate_folio callback. This is the most common path
+			 * for page migration.
+			 */
+			rc = mapping->a_ops->migrate_folio_finalize(mapping, dst, src);
+		else
+			rc = -EOPNOTSUPP;
+	} else
+		rc = -EOPNOTSUPP;
+	return rc;
+}
+
+/*
  * To record some information during migration, we use unused private
  * field of struct folio of the newly allocated destination folio.
  * This is safe because nobody is using it except us.
@@ -1126,6 +1301,16 @@ static void __migrate_folio_record(struct folio *dst,
 				   struct anon_vma *anon_vma)
 {
 	dst->private = (void *)anon_vma + old_page_state;
+}
+
+static void __migrate_folio_read(struct folio *dst,
+				   int *old_page_state,
+				   struct anon_vma **anon_vmap)
+{
+	unsigned long private = (unsigned long)dst->private;
+
+	*anon_vmap = (struct anon_vma *)(private & ~PAGE_OLD_STATES);
+	*old_page_state = private & PAGE_OLD_STATES;
 }
 
 static void __migrate_folio_extract(struct folio *dst,
@@ -1427,6 +1612,126 @@ out:
 	return rc;
 }
 
+/* Migrate the folio to the newly allocated folio in dst. */
+static int migrate_folio_move_prep(free_folio_t put_new_folio, unsigned long private,
+			      struct folio *src, struct folio *dst,
+			      enum migrate_mode mode, enum migrate_reason reason,
+			      struct list_head *ret)
+{
+	int rc;
+	int old_page_state = 0;
+	struct anon_vma *anon_vma = NULL;
+	bool is_lru = !__folio_test_movable(src);
+	struct list_head *prev;
+
+	__migrate_folio_read(dst, &old_page_state, &anon_vma);
+	prev = dst->lru.prev;
+	list_del(&dst->lru);
+
+	if (unlikely(!is_lru))
+		goto out_unlock_both;
+
+	rc = move_to_new_folio_prep(dst, src, mode);
+	if (!rc)
+		return 0;
+	/*
+	 * A folio that has not been migrated will be restored to
+	 * right list unless we want to retry.
+	 */
+	if (rc == -EAGAIN) {
+		list_add(&dst->lru, prev);
+		__migrate_folio_record(dst, old_page_state, anon_vma);
+		return rc;
+	}
+
+	migrate_folio_undo_src(src, old_page_state & PAGE_WAS_MAPPED,
+			       anon_vma, true, ret);
+	migrate_folio_undo_dst(dst, true, put_new_folio, private);
+
+	return rc;
+
+out_unlock_both:
+	folio_unlock(dst);
+	set_page_owner_migrate_reason(&dst->page, reason);
+	/*
+	 * If migration is successful, decrease refcount of dst,
+	 * which will not free the page because new page owner increased
+	 * refcounter.
+	 */
+	folio_put(dst);
+
+	/*
+	 * A folio that has been migrated has all references removed
+	 * and will be freed.
+	 */
+	list_del(&src->lru);
+	/* Drop an anon_vma reference if we took one */
+	if (anon_vma)
+		put_anon_vma(anon_vma);
+	folio_unlock(src);
+	migrate_folio_done(src, reason);
+
+	return rc;
+}
+
+static int migrate_folio_move_finalize(free_folio_t put_new_folio, unsigned long private,
+			      struct folio *src, struct folio *dst,
+			      enum migrate_mode mode, enum migrate_reason reason,
+			      struct list_head *ret)
+{
+	int rc;
+	int old_page_state = 0;
+	struct anon_vma *anon_vma = NULL;
+
+	rc = move_to_new_folio_finalize(dst, src, mode);
+	if (rc)
+		goto out;
+
+	__migrate_folio_extract(src, &old_page_state, &anon_vma);
+	/*
+	 * When successful, push dst to LRU immediately: so that if it
+	 * turns out to be an mlocked page, remove_migration_ptes() will
+	 * automatically build up the correct dst->mlock_count for it.
+	 *
+	 * We would like to do something similar for the old page, when
+	 * unsuccessful, and other cases when a page has been temporarily
+	 * isolated from the unevictable LRU: but this case is the easiest.
+	 */
+	folio_add_lru(dst);
+	if (old_page_state & PAGE_WAS_MLOCKED)
+		lru_add_drain();
+
+	if (old_page_state & PAGE_WAS_MAPPED)
+		remove_migration_ptes(src, dst, 0);
+
+	folio_unlock(dst);
+	set_page_owner_migrate_reason(&dst->page, reason);
+	/*
+	 * If migration is successful, decrease refcount of dst,
+	 * which will not free the page because new page owner increased
+	 * refcounter.
+	 */
+	folio_put(dst);
+
+	/*
+	 * A folio that has been migrated has all references removed
+	 * and will be freed.
+	 */
+	list_del(&src->lru);
+	/* Drop an anon_vma reference if we took one */
+	if (anon_vma)
+		put_anon_vma(anon_vma);
+	folio_unlock(src);
+	migrate_folio_done(src, reason);
+
+	return rc;
+out:
+	migrate_folio_undo_src(src, old_page_state & PAGE_WAS_MAPPED,
+			       anon_vma, true, ret);
+	migrate_folio_undo_dst(dst, true, put_new_folio, private);
+
+	return rc;
+}
 /*
  * Counterpart of unmap_and_move_page() for hugepage migration.
  *
@@ -1895,9 +2200,37 @@ move:
 
 			cond_resched();
 
-			rc = migrate_folio_move(put_new_folio, private,
+			rc = migrate_folio_move_prep(put_new_folio, private,
 						folio, dst, mode,
 						reason, ret_folios);
+
+			if (rc == -EAGAIN) {
+				rc = migrate_folio_move(put_new_folio, private,
+						folio, dst, mode,
+						reason, ret_folios);
+				goto error_handle;
+			} else if (rc)
+				goto error_handle;
+
+			rc = folio_mc_copy(dst, folio);
+
+			if (rc) {
+				int old_page_state = 0;
+				struct anon_vma *anon_vma = NULL;
+
+				__migrate_folio_extract(dst, &old_page_state, &anon_vma);
+				migrate_folio_undo_src(folio, old_page_state & PAGE_WAS_MAPPED,
+						       anon_vma, true, ret_folios);
+				migrate_folio_undo_dst(dst, true, put_new_folio, private);
+
+				goto error_handle;
+			}
+
+			rc = migrate_folio_move_finalize(put_new_folio, private,
+				folio, dst, mode,
+				reason, ret_folios);
+
+error_handle:
 			/*
 			 * The rules are:
 			 *	Success: folio will be freed

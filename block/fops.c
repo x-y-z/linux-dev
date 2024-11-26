@@ -528,6 +528,8 @@ const struct address_space_operations def_blk_aops = {
 	.is_partially_uptodate  = iomap_is_partially_uptodate,
 	.error_remove_folio	= generic_error_remove_folio,
 	.migrate_folio		= filemap_migrate_folio,
+	.migrate_folio_prep	= filemap_migrate_folio_prep,
+	.migrate_folio_finalize	= filemap_migrate_folio_finalize,
 };
 #endif /* CONFIG_BUFFER_HEAD */
 

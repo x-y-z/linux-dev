@@ -65,6 +65,10 @@ extern const char *migrate_reason_names[MR_TYPES];
 void putback_movable_pages(struct list_head *l);
 int migrate_folio(struct address_space *mapping, struct folio *dst,
 		struct folio *src, enum migrate_mode mode);
+int migrate_folio_prep(struct address_space *mapping, struct folio *dst,
+		  struct folio *src);
+int migrate_folio_finalize(struct address_space *mapping, struct folio *dst,
+		  struct folio *src);
 int migrate_pages(struct list_head *l, new_folio_t new, free_folio_t free,
 		  unsigned long private, enum migrate_mode mode, int reason,
 		  unsigned int *ret_succeeded);

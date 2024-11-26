@@ -1260,8 +1260,14 @@ bool noop_dirty_folio(struct address_space *mapping, struct folio *folio);
 #ifdef CONFIG_MIGRATION
 int filemap_migrate_folio(struct address_space *mapping, struct folio *dst,
 		struct folio *src, enum migrate_mode mode);
+int filemap_migrate_folio_prep(struct address_space *mapping,
+		struct folio *dst, struct folio *src);
+int filemap_migrate_folio_finalize(struct address_space *mapping,
+		struct folio *dst, struct folio *src);
 #else
 #define filemap_migrate_folio NULL
+#define filemap_migrate_folio_prep NULL
+#define filemap_migrate_folio_finalize NULL
 #endif
 void folio_end_private_2(struct folio *folio);
 void folio_wait_private_2(struct folio *folio);
