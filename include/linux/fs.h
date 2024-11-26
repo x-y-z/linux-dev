@@ -425,6 +425,10 @@ struct address_space_operations {
 	 */
 	int (*migrate_folio)(struct address_space *, struct folio *dst,
 			struct folio *src, enum migrate_mode);
+	int (*migrate_folio_prep)(struct address_space *, struct folio *dst,
+			struct folio *src);
+	int (*migrate_folio_finalize)(struct address_space *, struct folio *dst,
+			struct folio *src);
 	int (*launder_folio)(struct folio *);
 	bool (*is_partially_uptodate) (struct folio *, size_t from,
 			size_t count);
