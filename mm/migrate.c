@@ -51,6 +51,8 @@
 
 #include "internal.h"
 
+int use_mt_copy = 0;
+
 bool isolate_movable_page(struct page *page, isolate_mode_t mode)
 {
 	struct folio *folio = folio_get_nontail_page(page);
@@ -633,7 +635,11 @@ int migrate_huge_page_move_mapping(struct address_space *mapping,
 	if (folio_ref_count(src) != expected_count)
 		return -EAGAIN;
 
-	rc = folio_mc_copy(dst, src);
+	if (use_mt_copy)
+		rc = copy_page_multithread(&dst->page, &src->page,
+					   folio_nr_pages(dst));
+	else
+		rc = folio_mc_copy(dst, src);
 	if (unlikely(rc))
 		return rc;
 
@@ -764,7 +770,11 @@ static int __migrate_folio(struct address_space *mapping, struct folio *dst,
 	if (folio_ref_count(src) != expected_count)
 		return -EAGAIN;
 
-	rc = folio_mc_copy(dst, src);
+	if (use_mt_copy)
+		rc = copy_page_multithread(&dst->page, &src->page,
+					   folio_nr_pages(dst));
+	else
+		rc = folio_mc_copy(dst, src);
 	if (unlikely(rc))
 		return rc;
 
