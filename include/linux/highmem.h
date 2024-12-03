@@ -331,6 +331,8 @@ static inline void copy_highpage(struct page *to, struct page *from)
 
 #endif
 
+int copy_page_multithread(struct page *to, struct page *from, int nr_pages);
+
 #ifdef copy_mc_to_kernel
 /*
  * If architecture supports machine check exception handling, define the
