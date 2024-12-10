@@ -2191,6 +2191,7 @@ move:
 						reason, ret_folios);
 
 			if (rc == -EAGAIN) {
+				WARN(1, "batched migrate_folio_move_prep failed");
 				rc = migrate_folio_move(put_new_folio, private,
 						folio, dst, mode,
 						reason, ret_folios);
@@ -2232,49 +2233,107 @@ error_handle:
 			dst2 = list_next_entry(dst, lru);
 		}
 
-		dst = list_first_entry(&copy_folios, struct folio, lru);
-		dst2 = list_next_entry(dst, lru);
-		list_for_each_entry_safe(folio, folio2, &unmap_folios, lru) {
-			rc = folio_mc_copy(dst, folio);
+		if (use_mt_copy) {
+			struct folio **src_list = NULL;
+			struct folio **dst_list = NULL;
+			int num_pages = 0, idx = 0;
+			int num_thps = 0;
+			nr_pages = 0;
 
-			if (rc) {
-				int old_page_state = 0;
-				struct anon_vma *anon_vma = NULL;
-
-				list_move_tail(&folio->lru, &err_src);
-				list_move_tail(&dst->lru, &err_dst);
-
-				__migrate_folio_extract(dst, &old_page_state, &anon_vma);
-				migrate_folio_undo_src(folio, old_page_state & PAGE_WAS_MAPPED,
-						       anon_vma, true, ret_folios);
-				migrate_folio_undo_dst(dst, true, put_new_folio, private);
+			list_for_each_entry_safe(folio, folio2, &unmap_folios, lru) {
+				++num_pages;
+				nr_pages += folio_nr_pages(folio);
+				num_thps += (folio_test_large(folio) && folio_test_pmd_mappable(folio));
 			}
+
+			src_list = kzalloc(sizeof(struct folio*) * num_pages, GFP_KERNEL);
+			dst_list = kzalloc(sizeof(struct folio*) * num_pages, GFP_KERNEL);
+
+			dst = list_first_entry(&copy_folios, struct folio, lru);
+			dst2 = list_next_entry(dst, lru);
+			list_for_each_entry_safe(folio, folio2, &unmap_folios, lru) {
+				src_list[idx] = folio;
+				dst_list[idx] = dst;
+
+				dst = dst2;
+				dst2 = list_next_entry(dst, lru);
+				++idx;
+			}
+
+			VM_WARN_ON(idx != num_pages);
+
+			rc = copy_page_lists_mt(dst_list, src_list, num_pages);
+			WARN_ON(rc);
 
 			switch(rc) {
 			case -EAGAIN:
 				retry++;
-				thp_retry += is_thp;
+				thp_retry += num_thps;
 				nr_retry_pages += nr_pages;
 				break;
 			case MIGRATEPAGE_SUCCESS:
 				stats->nr_succeeded += nr_pages;
-				stats->nr_thp_succeeded += is_thp;
+				stats->nr_thp_succeeded += num_thps;
 				break;
 			default:
 				nr_failed++;
-				stats->nr_thp_failed += is_thp;
+				stats->nr_thp_failed += num_thps;
 				stats->nr_failed_pages += nr_pages;
 				break;
 			}
+			kfree(src_list);
+			kfree(dst_list);
 
-			dst = dst2;
+		} else {
+			dst = list_first_entry(&copy_folios, struct folio, lru);
 			dst2 = list_next_entry(dst, lru);
+			list_for_each_entry_safe(folio, folio2, &unmap_folios, lru) {
+				is_thp = folio_test_large(folio) && folio_test_pmd_mappable(folio);
+				nr_pages = folio_nr_pages(folio);
+				rc = folio_mc_copy(dst, folio);
+
+				if (rc) {
+					int old_page_state = 0;
+					struct anon_vma *anon_vma = NULL;
+
+					list_move_tail(&folio->lru, &err_src);
+					list_move_tail(&dst->lru, &err_dst);
+
+					__migrate_folio_extract(dst, &old_page_state, &anon_vma);
+					migrate_folio_undo_src(folio, old_page_state & PAGE_WAS_MAPPED,
+							       anon_vma, true, ret_folios);
+					migrate_folio_undo_dst(dst, true, put_new_folio, private);
+				}
+
+				switch(rc) {
+				case -EAGAIN:
+					retry++;
+					thp_retry += is_thp;
+					nr_retry_pages += nr_pages;
+					break;
+				case MIGRATEPAGE_SUCCESS:
+					stats->nr_succeeded += nr_pages;
+					stats->nr_thp_succeeded += is_thp;
+					break;
+				default:
+					nr_failed++;
+					stats->nr_thp_failed += is_thp;
+					stats->nr_failed_pages += nr_pages;
+					break;
+				}
+
+				dst = dst2;
+				dst2 = list_next_entry(dst, lru);
+			}
 		}
 		
 		dst = list_first_entry(&copy_folios, struct folio, lru);
 		dst2 = list_next_entry(dst, lru);
 		list_for_each_entry_safe(folio, folio2, &unmap_folios, lru) {
 			list_del(&dst->lru);
+
+			is_thp = folio_test_large(folio) && folio_test_pmd_mappable(folio);
+			nr_pages = folio_nr_pages(folio);
 			rc = migrate_folio_move_finalize(put_new_folio, private,
 				folio, dst, mode,
 				reason, ret_folios);

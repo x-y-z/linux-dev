@@ -332,6 +332,7 @@ static inline void copy_highpage(struct page *to, struct page *from)
 #endif
 
 int copy_page_multithread(struct page *to, struct page *from, int nr_pages);
+int copy_page_lists_mt(struct folio **to, struct folio **from, int nr_items);
 
 #ifdef copy_mc_to_kernel
 /*
