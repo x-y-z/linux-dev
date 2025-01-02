@@ -51,6 +51,7 @@
 
 #include "internal.h"
 
+int sysctl_use_mt_copy;
 
 bool isolate_movable_page(struct page *page, isolate_mode_t mode)
 {
@@ -1618,7 +1619,7 @@ static inline int try_split_folio(struct folio *folio, struct list_head *split_f
 }
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-#define NR_MAX_BATCHED_MIGRATION	HPAGE_PMD_NR
+#define NR_MAX_BATCHED_MIGRATION	HPAGE_PUD_NR
 #else
 #define NR_MAX_BATCHED_MIGRATION	512
 #endif
@@ -1869,10 +1870,9 @@ static void migrate_folios_batch_move(struct list_head *src_folios,
 		goto out;
 
 	/* Batch copy the folios */
-
 	/* try multithreads page copy first*/
 	rc = -EAGAIN;
-	if (total_nr_pages > MIN_MT_COPY_THRESHOLD)
+	if (sysctl_use_mt_copy)
 		rc = copy_page_lists_mt(dst_folios, src_folios,
 				nr_batched_folios);
 
