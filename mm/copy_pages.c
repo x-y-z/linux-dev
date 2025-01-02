@@ -10,6 +10,7 @@
 
 
 unsigned int limit_mt_num = 4;
+unsigned int push_0_pull_1 = 0;
 
 struct copy_item {
 	char *to;
@@ -46,9 +47,10 @@ int copy_page_lists_mt(struct list_head *dst_folios,
 	int err = 0;
 	unsigned int total_mt_num = limit_mt_num;
 	int to_node = folio_nid(list_first_entry(dst_folios, struct folio, lru));
+	int from_node = folio_nid(list_first_entry(src_folios, struct folio, lru));
 	int i;
 	struct copy_page_info *work_items[32] = {0};
-	const struct cpumask *per_node_cpumask = cpumask_of_node(to_node);
+	const struct cpumask *per_node_cpumask = cpumask_of_node(push_0_pull_1?to_node:from_node);
 	int cpu_id_list[32] = {0};
 	int cpu;
 	int max_items_per_thread;

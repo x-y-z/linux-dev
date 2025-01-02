@@ -90,6 +90,7 @@ EXPORT_SYMBOL_GPL(sysctl_long_vals);
 
 extern int use_mt_copy;
 extern unsigned int limit_mt_num;
+extern unsigned int push_0_pull_1;
 
 #if defined(CONFIG_SYSCTL)
 
@@ -2111,6 +2112,15 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE,
 		.extra2		= SYSCTL_32,
+	},
+	{
+		.procname	= "push_0_pull_1",
+		.data		= &push_0_pull_1,
+		.maxlen		= sizeof(push_0_pull_1),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 	{
 		.procname	= "drop_caches",
