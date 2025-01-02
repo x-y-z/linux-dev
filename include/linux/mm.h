@@ -42,6 +42,9 @@ struct pt_regs;
 struct folio_batch;
 
 extern int sysctl_page_lock_unfairness;
+extern int sysctl_use_mt_copy;
+extern unsigned int sysctl_limit_mt_num;
+
 
 void mm_core_init(void);
 void init_mm_internals(void);
