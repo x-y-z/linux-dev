@@ -51,6 +51,8 @@
 
 #include "internal.h"
 
+int use_mt_copy;
+
 struct migrate_folio_info {
 	unsigned long private;
 	struct list_head list;
@@ -1872,7 +1874,8 @@ static void migrate_folios_batch_move(struct list_head *src_folios,
 		goto out;
 
 	/* Batch copy the folios */
-	if (total_nr_pages > 32) {
+	/* if (total_nr_pages > 32) { */
+	if (use_mt_copy) {
 		copy_page_lists_mt(dst_folios, src_folios, total_nr_folios);
 	} else {
 		dst = list_first_entry(dst_folios, struct folio, lru);
