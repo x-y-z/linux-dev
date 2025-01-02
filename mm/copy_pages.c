@@ -12,7 +12,9 @@
 #include <linux/migrate.h>
 
 
-unsigned int limit_mt_num = 4;
+unsigned int sysctl_limit_mt_num = 4;
+/* push by default */
+unsigned int sysctl_push_0_pull_1;
 
 #define MAX_NUM_COPY_THREADS 64
 
@@ -52,7 +54,7 @@ int copy_page_lists_mt(struct list_head *dst_folios,
 {
 	struct copy_page_info *work_items[MAX_NUM_COPY_THREADS] = {0};
 	int cpu_id_list[MAX_NUM_COPY_THREADS] = {0};
-	unsigned int total_mt_num = limit_mt_num;
+	unsigned int total_mt_num = sysctl_limit_mt_num;
 	const struct cpumask *copy_node_cpumask;
 	struct folio *src, *src2, *dst, *dst2;
 	int max_items_per_thread;
@@ -73,7 +75,8 @@ int copy_page_lists_mt(struct list_head *dst_folios,
 	/* try to find a node to perform copy job */
 	for (i = 0; i < 3; i++) {
 		copy_node_cpumask = cpumask_of_node(copy_nodes[i]);
-		if (cpumask_weight(copy_node_cpumask))
+		if (cpumask_weight(copy_node_cpumask) &&
+		    i == sysctl_push_0_pull_1)
 			break;
 	}
 
