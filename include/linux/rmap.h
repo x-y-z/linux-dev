@@ -231,7 +231,7 @@ static inline void __folio_rmap_sanity_checks(const struct folio *folio,
 		break;
 	case RMAP_LEVEL_PUD:
 		/*
-		 * Assume that we are creating * a single "entire" mapping of the
+		 * Assume that we are creating a single "entire" mapping of the
 		 * folio.
 		 */
 		VM_WARN_ON_FOLIO(folio_nr_pages(folio) != HPAGE_PUD_NR, folio);
