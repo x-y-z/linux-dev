@@ -1552,7 +1552,7 @@ EXPORT_SYMBOL_GPL(vmf_insert_pfn_pud);
 /**
  * vmf_insert_folio_pud - insert a pud size folio mapped by a pud entry
  * @vmf: Structure describing the fault
- * @pfn: pfn of the page to insert
+ * @folio: folio to insert
  * @write: whether it's a write fault
  *
  * Return: vm_fault_t value.
