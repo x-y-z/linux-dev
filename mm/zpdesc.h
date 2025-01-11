@@ -74,7 +74,7 @@ static_assert(sizeof(struct zpdesc) <= sizeof(struct page));
 
 /**
  * zpdesc_folio - The folio allocated for a zpdesc
- * @zpdesc: The zpdesc.
+ * @zp: The zpdesc.
  *
  * Zpdescs are descriptors for zpool memory. The zpool memory itself is
  * allocated as folios that contain the zpool objects, and zpdesc uses specific
