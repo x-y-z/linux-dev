@@ -2625,7 +2625,7 @@ static bool should_clear_pmd_young(void)
 	}
 
 #define evictable_min_seq(min_seq, swappiness)				\
-	min((min_seq)[!(swappiness)], (min_seq)[(swappiness) != MAX_SWAPPINESS])
+	min((min_seq)[!(swappiness)], (min_seq)[(swappiness) <= MAX_SWAPPINESS])
 
 #define for_each_gen_type_zone(gen, type, zone)				\
 	for ((gen) = 0; (gen) < MAX_NR_GENS; (gen)++)			\
@@ -2633,7 +2633,7 @@ static bool should_clear_pmd_young(void)
 			for ((zone) = 0; (zone) < MAX_NR_ZONES; (zone)++)
 
 #define for_each_evictable_type(type, swappiness)			\
-	for ((type) = !(swappiness); (type) <= ((swappiness) != MAX_SWAPPINESS); (type)++)
+	for ((type) = !(swappiness); (type) <= ((swappiness) <= MAX_SWAPPINESS); (type)++)
 
 #define get_memcg_gen(seq)	((seq) % MEMCG_NR_GENS)
 #define get_memcg_bin(bin)	((bin) % MEMCG_NR_BINS)
@@ -3279,7 +3279,7 @@ static int should_skip_vma(unsigned long start, unsigned long end, struct mm_wal
 	if (shmem_mapping(mapping))
 		return !walk->swappiness;
 
-	if (walk->swappiness == MAX_SWAPPINESS)
+	if (walk->swappiness > MAX_SWAPPINESS)
 		return true;
 
 	/* to exclude special mappings like dax, etc. */
@@ -3739,7 +3739,7 @@ static bool inc_min_seq(struct lruvec *lruvec, int type, int swappiness)
 	int hist = lru_hist_from_seq(lrugen->min_seq[type]);
 	int new_gen, old_gen = lru_gen_from_seq(lrugen->min_seq[type]);
 
-	if (type ? swappiness == MAX_SWAPPINESS : !swappiness)
+	if (type ? swappiness > MAX_SWAPPINESS : !swappiness)
 		goto done;
 
 	/* prevent cold/hot inversion if the type is evictable */
@@ -3800,7 +3800,7 @@ next:
 	}
 
 	/* see the comment on lru_gen_folio */
-	if (swappiness && swappiness != MAX_SWAPPINESS) {
+	if (swappiness && swappiness <= MAX_SWAPPINESS) {
 		unsigned long seq = lrugen->max_seq - MIN_NR_GENS;
 
 		if (min_seq[LRU_GEN_ANON] > seq && min_seq[LRU_GEN_FILE] < seq)
@@ -4556,13 +4556,13 @@ static int isolate_folios(struct lruvec *lruvec, struct scan_control *sc, int sw
 	 * 2. If !__GFP_IO, file first since clean pagecache is more likely to
 	 *    exist than clean swapcache.
 	 */
-	if (!swappiness)
+	if (swappiness <= MIN_SWAPPINESS + 1)
 		type = LRU_GEN_FILE;
 	else if (min_seq[LRU_GEN_ANON] < min_seq[LRU_GEN_FILE])
 		type = LRU_GEN_ANON;
 	else if (swappiness == 1)
 		type = LRU_GEN_FILE;
-	else if (swappiness == MAX_SWAPPINESS)
+	if (swappiness >= MAX_SWAPPINESS)
 		type = LRU_GEN_ANON;
 	else if (!(sc->gfp_mask & __GFP_IO))
 		type = LRU_GEN_FILE;
@@ -5449,7 +5449,7 @@ static int run_cmd(char cmd, int memcg_id, int nid, unsigned long seq,
 
 	if (swappiness < MIN_SWAPPINESS)
 		swappiness = get_swappiness(lruvec, sc);
-	else if (swappiness > MAX_SWAPPINESS)
+	else if (swappiness > MAX_SWAPPINESS + 1)
 		goto done;
 
 	switch (cmd) {
