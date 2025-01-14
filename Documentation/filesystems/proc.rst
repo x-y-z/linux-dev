@@ -2257,10 +2257,10 @@ Description
 ksm_rmap_items
 ^^^^^^^^^^^^^^
 
-The number of ksm_rmap_item structure in use. The structure of
-ksm_rmap_item is to store the reverse mapping information for virtual
-addresses. KSM will generate a ksm_rmap_item for each ksm-scanned page
-of the process.
+The number of ksm_rmap_item structures in use.  The structure
+ksm_rmap_item stores the reverse mapping information for virtual
+addresses.  KSM will generate a ksm_rmap_item for each ksm-scanned page of
+the process.
 
 ksm_zero_pages
 ^^^^^^^^^^^^^^
@@ -2289,14 +2289,16 @@ ksm_merge_any
 ^^^^^^^^^^^^^
 
 It specifies whether the process'mm is added by prctl() into the candidate list
-of KSM or not, and KSM scanning is fully enabled at process level.
+of KSM or not, and if KSM scanning is fully enabled at process level.
 
 ksm_mergeable
 ^^^^^^^^^^^^^
 
-It specifies whether any VMAs of the process'mm are currently applicable to KSM.
+It specifies whether any VMAs of the process'mm are currently applicable
+to KSM.
 
-More information about KSM can be found at Documentation/admin-guide/mm/ksm.rst.
+More information about KSM can be found in
+Documentation/admin-guide/mm/ksm.rst.
 
 
 Chapter 4: Configuring procfs
