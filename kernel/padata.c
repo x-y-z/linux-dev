@@ -45,7 +45,7 @@ struct padata_mt_job_state {
 };
 
 static void padata_free_pd(struct parallel_data *pd);
-static void __init padata_mt_helper(struct work_struct *work);
+static void padata_mt_helper(struct work_struct *work);
 
 static inline void padata_get_pd(struct parallel_data *pd)
 {
@@ -462,7 +462,7 @@ static int padata_setup_cpumasks(struct padata_instance *pinst)
 	return err;
 }
 
-static void __init padata_mt_helper(struct work_struct *w)
+static void padata_mt_helper(struct work_struct *w)
 {
 	struct padata_work *pw = container_of(w, struct padata_work, pw_work);
 	struct padata_mt_job_state *ps = pw->pw_data;
@@ -502,7 +502,7 @@ static void __init padata_mt_helper(struct work_struct *w)
  *
  * See the definition of struct padata_mt_job for more details.
  */
-void __init padata_do_multithreaded(struct padata_mt_job *job)
+void padata_do_multithreaded(struct padata_mt_job *job)
 {
 	/* In case threads finish at different times. */
 	static const unsigned long load_balance_factor = 4;
@@ -510,7 +510,7 @@ void __init padata_do_multithreaded(struct padata_mt_job *job)
 	struct padata_mt_job_state ps;
 	LIST_HEAD(works);
 	int nworks, nid;
-	static atomic_t last_used_nid __initdata;
+	static atomic_t last_used_nid;
 
 	if (job->size == 0)
 		return;
@@ -566,6 +566,8 @@ void __init padata_do_multithreaded(struct padata_mt_job *job)
 	destroy_work_on_stack(&my_work.pw_work);
 	padata_works_free(&works);
 }
+
+EXPORT_SYMBOL(padata_do_multithreaded);
 
 static void __padata_list_init(struct padata_list *pd_list)
 {

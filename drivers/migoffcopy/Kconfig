@@ -1,0 +1,9 @@
+config MTCOPY_CPU
+       bool "Multi-Threaded Copy with CPU"
+       depends on OFFC_MIGRATION
+       default n
+       help
+         Interface MT COPY CPU driver for batch page migration
+         offloading. Say Y if you want to try offloading with
+         MultiThreaded CPU copy APIs.
+

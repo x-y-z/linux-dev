@@ -42,6 +42,9 @@ obj-y				+= clk/
 # really early.
 obj-$(CONFIG_DMADEVICES)	+= dma/
 
+# Migration copy Offload
+obj-$(CONFIG_OFFC_MIGRATION)	+= migoffcopy/
+
 # SOC specific infrastructure drivers.
 obj-y				+= soc/
 obj-$(CONFIG_PM_GENERIC_DOMAINS)	+= pmdomain/
