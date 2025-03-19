@@ -44,6 +44,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/memory-tiers.h>
 #include <linux/pagewalk.h>
+#include <linux/migrate_offc.h>
 
 #include <asm/tlbflush.h>
 
@@ -728,6 +729,37 @@ void folio_migrate_flags(struct folio *newfolio, struct folio *folio)
 }
 EXPORT_SYMBOL(folio_migrate_flags);
 
+DEFINE_STATIC_CALL(_folios_copy, folios_mc_copy);
+DEFINE_STATIC_CALL(_can_offc_migrate, can_offc_migrate);
+
+#ifdef CONFIG_OFFC_MIGRATION
+void srcu_mig_cb(struct rcu_head *head)
+{
+	static_call_query(_folios_copy);
+}
+
+void offc_update_migrator(struct migrator *mig)
+{
+	int index;
+
+	mutex_lock(&migrator_mut);
+	index = srcu_read_lock(&mig_srcu);
+	strscpy(migrator.name, mig ? mig->name : "kernel", MIGRATOR_NAME_LEN);
+	static_call_update(_folios_copy, mig ? mig->migrate_offc : folios_mc_copy);
+	static_call_update(_can_offc_migrate, mig ? mig->can_migrate_offc : can_offc_migrate);
+	if (READ_ONCE(migrator.owner))
+		module_put(migrator.owner);
+	xchg(&migrator.owner, mig ? mig->owner : NULL);
+	if (READ_ONCE(migrator.owner))
+		try_module_get(migrator.owner);
+	srcu_read_unlock(&mig_srcu, index);
+	mutex_unlock(&migrator_mut);
+	call_srcu(&mig_srcu, &migrator.srcu_head, srcu_mig_cb);
+	srcu_barrier(&mig_srcu);
+}
+
+#endif /* CONFIG_OFFC_MIGRATION */
+
 /************************************************************
  *                    Migration functions
  ***********************************************************/
@@ -1013,11 +1045,15 @@ static int _move_to_new_folio_prep(struct folio *dst, struct folio *src,
 {
 	int rc = -EAGAIN;
 	bool is_lru = !__folio_test_movable(src);
+	bool can_migrate;
 
 	VM_BUG_ON_FOLIO(!folio_test_locked(src), src);
 	VM_BUG_ON_FOLIO(!folio_test_locked(dst), dst);
 
-	if (likely(is_lru)) {
+	can_migrate = static_call(_can_offc_migrate)(dst, src);
+	if (unlikely(!can_migrate))
+		rc = -EAGAIN;
+	else if (likely(is_lru)) {
 		struct address_space *mapping = folio_mapping(src);
 
 		if (!mapping)
@@ -1853,7 +1889,10 @@ static void migrate_folios_batch_move(struct list_head *src_folios,
 		goto out;
 
 	/* Batch copy the folios */
-	rc = folios_mc_copy(dst_folios, src_folios, nr_batched_folios);
+	rc = static_call(_folios_copy)(dst_folios, src_folios, nr_batched_folios);
+	/* TODO:  Is there a better way of handling the poison
+	 * recover for batch copy and falling back to serial copy?
+	 */
 
 	/* TODO:  Is there a better way of handling the poison
 	 * recover for batch copy, instead of falling back to serial copy?
