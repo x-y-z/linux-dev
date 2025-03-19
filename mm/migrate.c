@@ -1837,17 +1837,12 @@ static void migrate_folios_batch_move(struct list_head *src_folios,
 		int *nr_retry_pages)
 {
 	struct folio *folio, *folio2, *dst, *dst2;
-	int rc, nr_pages = 0, nr_batched_folios = 0;
+	int rc, nr_pages = 0, total_nr_pages = 0, nr_batched_folios = 0;
 	int old_page_state = 0;
 	struct anon_vma *anon_vma = NULL;
 	int is_thp = 0;
 	LIST_HEAD(err_src);
 	LIST_HEAD(err_dst);
-
-	if (mode != MIGRATE_ASYNC) {
-		*retry += 1;
-		return;
-	}
 
 	/*
 	 * Iterate over the list of locked src/dst folios to copy the metadata
@@ -1898,8 +1893,10 @@ static void migrate_folios_batch_move(struct list_head *src_folios,
 					old_page_state & PAGE_WAS_MAPPED,
 					anon_vma, true, ret_folios);
 			migrate_folio_undo_dst(dst, true, put_new_folio, private);
-		} else
+		} else {
+			total_nr_pages += nr_pages;
 			nr_batched_folios++;
+		}
 
 		dst = dst2;
 		dst2 = list_next_entry(dst, lru);
