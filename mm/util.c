@@ -747,6 +747,47 @@ int folio_mc_copy(struct folio *dst, struct folio *src)
 }
 EXPORT_SYMBOL(folio_mc_copy);
 
+/**
+ * folios_copy - Copy the contents of list of folios.
+ * @dst_list: Folios to copy to.
+ * @src_list: Folios to copy from.
+ *
+ * The folio contents are copied from @src_list to @dst_list.
+ * Assume the caller has validated that lists are not empty and both lists
+ * have equal number of folios. This may sleep.
+ */
+void folios_copy(struct list_head *dst_list, struct list_head *src_list,
+		 int __maybe_unused folios_cnt)
+{
+	struct folio *src, *dst;
+
+	dst = list_first_entry(dst_list, struct folio, lru);
+	list_for_each_entry(src, src_list, lru) {
+		cond_resched();
+		folio_copy(dst, src);
+		dst = list_next_entry(dst, lru);
+	}
+}
+
+int folios_mc_copy(struct list_head *dst_list, struct list_head *src_list,
+		 int __maybe_unused folios_cnt)
+{
+	struct folio *src, *dst;
+	int ret;
+
+	dst = list_first_entry(dst_list, struct folio, lru);
+	list_for_each_entry(src, src_list, lru) {
+		cond_resched();
+		ret = folio_mc_copy(dst, src);
+		if (ret)
+			return ret;
+		dst = list_next_entry(dst, lru);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(folios_mc_copy);
+
 int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;
 static int sysctl_overcommit_ratio __read_mostly = 50;
 static unsigned long sysctl_overcommit_kbytes __read_mostly;
