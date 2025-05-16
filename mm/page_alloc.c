@@ -507,6 +507,31 @@ void set_pageblock_migratetype(struct page *page, enum migratetype migratetype)
 				page_to_pfn(page), MIGRATETYPE_MASK);
 }
 
+void __meminit init_pageblock_migratetype(struct page *page,
+					  enum migratetype migratetype,
+					  bool isolate)
+{
+	unsigned long mask = MIGRATETYPE_MASK;
+
+	if (unlikely(page_group_by_mobility_disabled &&
+		     migratetype < MIGRATE_PCPTYPES))
+		migratetype = MIGRATE_UNMOVABLE;
+
+#ifdef CONFIG_MEMORY_ISOLATION
+	if (migratetype == MIGRATE_ISOLATE) {
+		VM_WARN(1,
+			"Set isolate=true to isolate pageblock with a migratetype");
+		return;
+	}
+	if (isolate) {
+		migratetype |= PB_migrate_isolate_bit;
+		mask |= PB_migrate_isolate_bit;
+	}
+#endif
+	set_pfnblock_flags_mask(page, (unsigned long)migratetype,
+				page_to_pfn(page), mask);
+}
+
 #ifdef CONFIG_DEBUG_VM
 static int page_outside_zone_boundaries(struct zone *zone, struct page *page)
 {
