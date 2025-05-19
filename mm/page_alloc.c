@@ -361,8 +361,9 @@ static inline int pfn_to_bitidx(const struct page *page, unsigned long pfn)
  *
  * Return: pageblock_bits flags
  */
-unsigned long get_pfnblock_flags_mask(const struct page *page,
-					unsigned long pfn, unsigned long mask)
+static unsigned long get_pfnblock_flags_mask(const struct page *page,
+					     unsigned long pfn,
+					     unsigned long mask)
 {
 	unsigned long *bitmap;
 	unsigned long bitidx, word_bitidx;
@@ -371,7 +372,7 @@ unsigned long get_pfnblock_flags_mask(const struct page *page,
 	bitmap = get_pageblock_bitmap(page, pfn);
 	bitidx = pfn_to_bitidx(page, pfn);
 	word_bitidx = bitidx / BITS_PER_LONG;
-	bitidx &= (BITS_PER_LONG-1);
+	bitidx &= (BITS_PER_LONG - 1);
 	/*
 	 * This races, without locks, with set_pfnblock_flags_mask(). Ensure
 	 * a consistent read of the memory array, so that results, even though
@@ -381,10 +382,36 @@ unsigned long get_pfnblock_flags_mask(const struct page *page,
 	return (word >> bitidx) & mask;
 }
 
-static __always_inline int get_pfnblock_migratetype(const struct page *page,
-					unsigned long pfn)
+/**
+ * get_pfnblock_bits - Return standalone bits of a pageblock
+ * @page: The page within the block of interest
+ * @pfn: The target page frame number
+ *
+ * Return: pageblock standalone bits
+ */
+__always_inline unsigned long get_pfnblock_bits(const struct page *page,
+						unsigned long pfn)
 {
-	return get_pfnblock_flags_mask(page, pfn, MIGRATETYPE_MASK);
+	return get_pfnblock_flags_mask(page, pfn, PAGEBLOCK_BITS_MASK);
+}
+
+/**
+ * get_pfnblock_migratetype - Return the migratetype of a pageblock
+ * @page: The page within the block of interest
+ * @pfn: The target page frame number
+ *
+ * Return: migratetype of the pageblock
+ *
+ * Use get_pfnblock_migratetype() if caller already has both @page and @pfn
+ * to save a call to page_to_pfn().
+ */
+__always_inline enum migratetype
+get_pfnblock_migratetype(const struct page *page, unsigned long pfn)
+{
+	unsigned long flags =
+		get_pfnblock_flags_mask(page, pfn, MIGRATETYPE_MASK);
+
+	return (enum migratetype)flags;
 }
 
 /**
@@ -394,9 +421,8 @@ static __always_inline int get_pfnblock_migratetype(const struct page *page,
  * @pfn: The target page frame number
  * @mask: mask of bits that the caller is interested in
  */
-void set_pfnblock_flags_mask(struct page *page, unsigned long flags,
-					unsigned long pfn,
-					unsigned long mask)
+static void set_pfnblock_flags_mask(struct page *page, unsigned long flags,
+				    unsigned long pfn, unsigned long mask)
 {
 	unsigned long *bitmap;
 	unsigned long bitidx, word_bitidx;
@@ -420,7 +446,39 @@ void set_pfnblock_flags_mask(struct page *page, unsigned long flags,
 	} while (!try_cmpxchg(&bitmap[word_bitidx], &word, (word & ~mask) | flags));
 }
 
-void set_pageblock_migratetype(struct page *page, int migratetype)
+/**
+ * set_pfnblock_bits - Set standalone bits of a pageblock
+ * @page: The page within the block of interest
+ * @pfn: The target page frame number
+ * @bits: standalone bits to set
+ */
+__always_inline void set_pfnblock_bits(struct page *page, unsigned long pfn,
+				       unsigned long bits)
+{
+	VM_WARN_ON(bits & ~PAGEBLOCK_BITS_MASK);
+	set_pfnblock_flags_mask(page, bits, pfn, bits);
+}
+
+/**
+ * clear_pfnblock_bits - Clear standalone bits of a pageblock
+ * @page: The page within the block of interest
+ * @pfn: The target page frame number
+ * @bits: standalone bits to clear
+ */
+__always_inline void clear_pfnblock_bits(struct page *page, unsigned long pfn,
+					  unsigned long bits)
+{
+	VM_WARN_ON(bits & ~PAGEBLOCK_BITS_MASK);
+
+	set_pfnblock_flags_mask(page, 0, pfn, bits);
+}
+
+/**
+ * set_pageblock_migratetype - Set the migratetype of a pageblock
+ * @page: The page within the block of interest
+ * @migratetype: migratetype to set
+ */
+void set_pageblock_migratetype(struct page *page, enum migratetype migratetype)
 {
 	if (unlikely(page_group_by_mobility_disabled &&
 		     migratetype < MIGRATE_PCPTYPES))
@@ -667,7 +725,7 @@ static inline void __add_to_free_list(struct page *page, struct zone *zone,
 	int nr_pages = 1 << order;
 
 	VM_WARN_ONCE(get_pageblock_migratetype(page) != migratetype,
-		     "page type is %lu, passed migratetype is %d (nr=%d)\n",
+		     "page type is %d, passed migratetype is %d (nr=%d)\n",
 		     get_pageblock_migratetype(page), migratetype, nr_pages);
 
 	if (tail)
@@ -693,7 +751,7 @@ static inline void move_to_free_list(struct page *page, struct zone *zone,
 
 	/* Free page moving can fail, so it happens before the type update */
 	VM_WARN_ONCE(get_pageblock_migratetype(page) != old_mt,
-		     "page type is %lu, passed migratetype is %d (nr=%d)\n",
+		     "page type is %d, passed migratetype is %d (nr=%d)\n",
 		     get_pageblock_migratetype(page), old_mt, nr_pages);
 
 	list_move_tail(&page->buddy_list, &area->free_list[new_mt]);
@@ -715,7 +773,7 @@ static inline void __del_page_from_free_list(struct page *page, struct zone *zon
 	int nr_pages = 1 << order;
 
         VM_WARN_ONCE(get_pageblock_migratetype(page) != migratetype,
-		     "page type is %lu, passed migratetype is %d (nr=%d)\n",
+		     "page type is %d, passed migratetype is %d (nr=%d)\n",
 		     get_pageblock_migratetype(page), migratetype, nr_pages);
 
 	/* clear reported state and update reported page count */

@@ -25,8 +25,16 @@ enum pageblock_bits {
 	 * Assume the bits will always align on a word. If this assumption
 	 * changes then get/set pageblock needs updating.
 	 */
-	NR_PAGEBLOCK_BITS
+	__NR_PAGEBLOCK_BITS
 };
+
+#define PB_migrate_skip_bit BIT(PB_migrate_skip)
+
+#define NR_PAGEBLOCK_BITS (roundup_pow_of_two(__NR_PAGEBLOCK_BITS))
+
+#define MIGRATETYPE_MASK ((1UL << (PB_migrate_end + 1)) - 1)
+#define PAGEBLOCK_BITS_MASK \
+	(((1UL << __NR_PAGEBLOCK_BITS) - 1) & ~MIGRATETYPE_MASK)
 
 #if defined(CONFIG_HUGETLB_PAGE)
 
@@ -65,27 +73,22 @@ extern unsigned int pageblock_order;
 /* Forward declaration */
 struct page;
 
-unsigned long get_pfnblock_flags_mask(const struct page *page,
-				unsigned long pfn,
-				unsigned long mask);
-
-void set_pfnblock_flags_mask(struct page *page,
-				unsigned long flags,
-				unsigned long pfn,
-				unsigned long mask);
+enum migratetype get_pfnblock_migratetype(const struct page *page,
+					  unsigned long pfn);
+unsigned long get_pfnblock_bits(const struct page *page, unsigned long pfn);
+void set_pfnblock_bits(struct page *page, unsigned long pfn,
+		       unsigned long bits);
+void clear_pfnblock_bits(struct page *page, unsigned long pfn,
+			 unsigned long bits);
 
 /* Declarations for getting and setting flags. See mm/page_alloc.c */
 #ifdef CONFIG_COMPACTION
 #define get_pageblock_skip(page) \
-	get_pfnblock_flags_mask(page, page_to_pfn(page),	\
-			(1 << (PB_migrate_skip)))
+	(get_pfnblock_bits(page, page_to_pfn(page)) & PB_migrate_skip_bit)
 #define clear_pageblock_skip(page) \
-	set_pfnblock_flags_mask(page, 0, page_to_pfn(page),	\
-			(1 << PB_migrate_skip))
+	clear_pfnblock_bits(page, page_to_pfn(page), PB_migrate_skip_bit)
 #define set_pageblock_skip(page) \
-	set_pfnblock_flags_mask(page, (1 << PB_migrate_skip),	\
-			page_to_pfn(page),			\
-			(1 << PB_migrate_skip))
+	set_pfnblock_bits(page, page_to_pfn(page), PB_migrate_skip_bit)
 #else
 static inline bool get_pageblock_skip(struct page *page)
 {
