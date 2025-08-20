@@ -3163,8 +3163,9 @@ __acquires(&pool->lock)
 	worker->current_work = work;
 	worker->current_func = work->func;
 	worker->current_pwq = pwq;
-	if (worker->task)
-		worker->current_at = worker->task->se.sum_exec_runtime;
+	if (worker->task) {
+		work->start_time = worker->current_at = worker->task->se.sum_exec_runtime;
+	}
 	work_data = *work_data_bits(work);
 	worker->current_color = get_work_color(work_data);
 
@@ -3239,6 +3240,10 @@ __acquires(&pool->lock)
 	 * point will only record its address.
 	 */
 	trace_workqueue_execute_end(work, worker->current_func);
+	if (work && worker->task && work->start_time) {
+		work->total_runtime += worker->task->se.sum_exec_runtime - work->start_time;
+	}
+
 
 	lock_map_release(&lockdep_map);
 	if (!bh_draining)

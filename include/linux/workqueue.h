@@ -287,6 +287,8 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
 		lockdep_init_map(&(_work)->lockdep_map, "(work_completion)"#_work, (_key), 0); \
 		INIT_LIST_HEAD(&(_work)->entry);			\
 		(_work)->func = (_func);				\
+		(_work)->start_time = 0;				\
+		(_work)->total_runtime = 0;				\
 	} while (0)
 #else
 #define __INIT_WORK_KEY(_work, _func, _onstack, _key)			\
@@ -295,6 +297,8 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
 		(_work)->data = (atomic_long_t) WORK_DATA_INIT();	\
 		INIT_LIST_HEAD(&(_work)->entry);			\
 		(_work)->func = (_func);				\
+		(_work)->start_time = 0;				\
+		(_work)->total_runtime = 0;				\
 	} while (0)
 #endif
 
