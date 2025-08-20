@@ -106,7 +106,7 @@ static void __ref padata_work_init(struct padata_work *pw, work_func_t work_fn,
 	pw->pw_data = data;
 }
 
-static int __init padata_work_alloc_mt(int nworks, void *data,
+static int padata_work_alloc_mt(int nworks, void *data,
 				       struct list_head *head)
 {
 	int i;
@@ -132,7 +132,7 @@ static void padata_work_free(struct padata_work *pw)
 	list_add(&pw->pw_list, &padata_free_works);
 }
 
-static void __init padata_works_free(struct list_head *works)
+static void padata_works_free(struct list_head *works)
 {
 	struct padata_work *cur, *next;
 
@@ -140,7 +140,12 @@ static void __init padata_works_free(struct list_head *works)
 		return;
 
 	spin_lock_bh(&padata_works_lock);
+	if (current)
+		current->se.prev_sum_exec_runtime = current->se.sum_exec_runtime;
 	list_for_each_entry_safe(cur, next, works, pw_list) {
+		if (current)
+			current->se.sum_exec_runtime += cur->pw_work.total_runtime;
+		pr_info("work time: %lld (start_time %lld)\n", cur->pw_work.total_runtime, cur->pw_work.start_time);
 		list_del(&cur->pw_list);
 		padata_work_free(cur);
 	}
@@ -498,6 +503,7 @@ void padata_do_multithreaded(struct padata_mt_job *job)
 	/* Wait for all the helpers to finish. */
 	wait_for_completion(&ps.completion);
 
+	pr_info("work 0 time: %lld (start time %lld)\n", my_work.pw_work.total_runtime, my_work.pw_work.start_time);
 	destroy_work_on_stack(&my_work.pw_work);
 	padata_works_free(&works);
 }
