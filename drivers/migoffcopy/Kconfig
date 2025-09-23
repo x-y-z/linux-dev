@@ -6,4 +6,12 @@ config MTCOPY_CPU
          Interface MT COPY CPU driver for batch page migration
          offloading. Say Y if you want to try offloading with
          MultiThreaded CPU copy APIs.
+config DCBM_DMA
+       bool "DMA Core Batch Migrator"
+       depends on OFFC_MIGRATION && DMA_ENGINE
+       default n
+       help
+         Interface DMA driver for batch page migration offloading.
+         Say Y if you want to try offloading with DMAEngine APIs
+         based driver.
 
