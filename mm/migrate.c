@@ -43,6 +43,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/memory-tiers.h>
 #include <linux/pagewalk.h>
+#include <linux/migrate_offc.h>
 
 #include <asm/tlbflush.h>
 
@@ -832,6 +833,52 @@ void folio_migrate_flags(struct folio *newfolio, struct folio *folio)
 	mem_cgroup_migrate(folio, newfolio);
 }
 EXPORT_SYMBOL(folio_migrate_flags);
+
+#ifdef CONFIG_HAVE_STATIC_CALL
+DEFINE_STATIC_CALL(_folios_copy, folios_mc_copy);
+
+#ifdef CONFIG_OFFC_MIGRATION
+void srcu_mig_cb(struct rcu_head *head)
+{
+	static_call_query(_folios_copy);
+}
+
+int offc_update_migrator(struct migrator *mig)
+{
+	struct module *old_owner, *new_owner;
+	int index;
+	int ret = 0;
+
+	mutex_lock(&migrator_mut);
+	index = srcu_read_lock(&mig_srcu);
+	old_owner = READ_ONCE(migrator.owner);
+	new_owner = mig ? mig->owner : NULL;
+
+	if (new_owner && !try_module_get(new_owner)) {
+		ret = -ENODEV;
+		goto out_unlock;
+	}
+
+	strscpy(migrator.name, mig ? mig->name : "kernel", MIGRATOR_NAME_LEN);
+	static_call_update(_folios_copy, mig ? mig->migrate_offc : folios_mc_copy);
+	xchg(&migrator.owner, mig ? mig->owner : NULL);
+	if (old_owner)
+		module_put(old_owner);
+
+out_unlock:
+	WARN_ON(ret < 0);
+	srcu_read_unlock(&mig_srcu, index);
+	mutex_unlock(&migrator_mut);
+
+	if (ret == 0) {
+		call_srcu(&mig_srcu, &migrator.srcu_head, srcu_mig_cb);
+		srcu_barrier(&mig_srcu);
+	}
+	return ret;
+}
+
+#endif /* CONFIG_OFFC_MIGRATION */
+#endif /* CONFIG_HAVE_STATIC_CALL */
 
 /************************************************************
  *                    Migration functions
@@ -1869,7 +1916,7 @@ static void migrate_folios_batch_move(struct list_head *src_folios,
 		goto out;
 
 	/* Batch copy the folios */
-	rc = folios_mc_copy(dst_folios, src_folios, nr_batched_folios);
+	rc = static_call(_folios_copy)(dst_folios, src_folios, nr_batched_folios);
 
 	/* TODO:  Is there a better way of handling the poison
 	 * recover for batch copy, instead of falling back to serial copy?
