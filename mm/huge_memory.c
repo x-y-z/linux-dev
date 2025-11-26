@@ -3955,20 +3955,16 @@ static int __folio_split(struct folio *folio, unsigned int new_order,
 	VM_WARN_ON_ONCE_FOLIO(!folio_test_locked(folio), folio);
 	VM_WARN_ON_ONCE_FOLIO(!folio_test_large(folio), folio);
 
-	if (folio != page_folio(split_at) || folio != page_folio(lock_at)) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (folio != page_folio(split_at) || folio != page_folio(lock_at))
+		return -EINVAL;
 
-	if (new_order >= old_order) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (new_order >= old_order)
+		return -EINVAL;
 
 	ret = folio_check_splittable(folio, new_order, split_type,
 				     /* warn = */ true);
 	if (ret)
-		goto out;
+		return ret;
 
 	if (is_anon) {
 		/*
