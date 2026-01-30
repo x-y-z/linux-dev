@@ -4364,7 +4364,7 @@ static char *alloc_one_pg_vec_page(unsigned long order)
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_COMP |
 			  __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY;
 
-	buffer = (char *) __get_free_pages(gfp_flags, order);
+	buffer = (char *) __get_free_folio(gfp_flags, order);
 	if (buffer)
 		return buffer;
 
@@ -4375,7 +4375,7 @@ static char *alloc_one_pg_vec_page(unsigned long order)
 
 	/* vmalloc failed, lets dig into swap here */
 	gfp_flags &= ~__GFP_NORETRY;
-	buffer = (char *) __get_free_pages(gfp_flags, order);
+	buffer = (char *) __get_free_folio(gfp_flags, order);
 	if (buffer)
 		return buffer;
 

@@ -361,6 +361,9 @@ struct page *alloc_pages_nolock_noprof(gfp_t gfp_flags, int nid, unsigned int or
 extern unsigned long get_free_pages_noprof(gfp_t gfp_mask, unsigned int order);
 #define __get_free_pages(...)			alloc_hooks(get_free_pages_noprof(__VA_ARGS__))
 
+extern unsigned long get_free_folio_noprof(gfp_t gfp_mask, unsigned int order);
+#define __get_free_folio(...)			alloc_hooks(get_free_folio_noprof(__VA_ARGS__))
+
 extern unsigned long get_zeroed_page_noprof(gfp_t gfp_mask);
 #define get_zeroed_page(...)			alloc_hooks(get_zeroed_page_noprof(__VA_ARGS__))
 

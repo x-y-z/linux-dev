@@ -5298,9 +5298,27 @@ unsigned long get_free_pages_noprof(gfp_t gfp_mask, unsigned int order)
 	page = alloc_pages_noprof(gfp_mask & ~__GFP_HIGHMEM, order);
 	if (!page)
 		return 0;
+	if (gfp_mask & __GFP_COMP)
+		return (unsigned long)folio_address(page_rmappable_folio(page));
 	return (unsigned long) page_address(page);
 }
 EXPORT_SYMBOL(get_free_pages_noprof);
+
+unsigned long get_free_folio_noprof(gfp_t gfp_mask, unsigned int order)
+{
+	struct page *page;
+
+	/* high order folio needs __GFP_COMP */
+	VM_WARN_ON_ONCE(order && !(gfp_mask & __GFP_COMP));
+
+	page = alloc_pages_noprof((gfp_mask & ~__GFP_HIGHMEM) | __GFP_COMP,
+				  order);
+	if (!page)
+		return 0;
+	return (unsigned long)folio_address(page_rmappable_folio(page));
+}
+
+EXPORT_SYMBOL(get_free_folio_noprof);
 
 unsigned long get_zeroed_page_noprof(gfp_t gfp_mask)
 {
