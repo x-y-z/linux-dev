@@ -949,9 +949,14 @@ static inline bool page_mapcount_is_type(unsigned int mapcount)
 	return page_type_has_type(mapcount - 1);
 }
 
-static inline bool page_has_type(const struct page *page)
+static inline bool __page_has_type(const struct page *page)
 {
 	return page_type_has_type(data_race(page->page_type));
+}
+
+static inline bool folio_has_type(const struct folio *folio)
+{
+	return __page_has_type(&folio->page);
 }
 
 #define FOLIO_TYPE_OPS(lname, fname)					\

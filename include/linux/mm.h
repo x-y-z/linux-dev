@@ -2672,7 +2672,7 @@ static inline int folio_expected_ref_count(const struct folio *folio)
 	const int order = folio_order(folio);
 	int ref_count = 0;
 
-	if (WARN_ON_ONCE(page_has_type(&folio->page) && !folio_test_hugetlb(folio)))
+	if (WARN_ON_ONCE(folio_has_type(folio) && !folio_test_hugetlb(folio)))
 		return 0;
 
 	/* One reference per page from the swapcache. */

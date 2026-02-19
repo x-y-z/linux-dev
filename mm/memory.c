@@ -2332,7 +2332,7 @@ static int validate_page_before_insert(struct vm_area_struct *vma,
 			return -EINVAL;
 		return 0;
 	}
-	if (folio_test_anon(folio) || page_has_type(page))
+	if (folio_test_anon(folio) || folio_has_type(folio))
 		return -EINVAL;
 	flush_dcache_folio(folio);
 	return 0;
