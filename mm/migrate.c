@@ -580,7 +580,7 @@ static int __folio_migrate_mapping(struct address_space *mapping,
 	if (!mapping) {
 		/* Take off deferred split queue while frozen and memcg set */
 		if (folio_test_large(folio) &&
-		    folio_test_large_rmappable(folio)) {
+		    folio_test_rmappable(folio)) {
 			if (!folio_ref_freeze(folio, expected_count))
 				return -EAGAIN;
 			folio_unqueue_deferred_split(folio);

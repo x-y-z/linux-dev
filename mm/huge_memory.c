@@ -224,8 +224,6 @@ retry:
 		count_vm_event(THP_ZERO_PAGE_ALLOC_FAILED);
 		return false;
 	}
-	/* Ensure zero folio won't have large_rmappable flag set. */
-	folio_clear_large_rmappable(zero_folio);
 	preempt_disable();
 	if (cmpxchg(&huge_zero_folio, NULL, zero_folio)) {
 		preempt_enable();
@@ -1183,7 +1181,7 @@ static inline bool is_transparent_hugepage(const struct folio *folio)
 		return false;
 
 	return is_huge_zero_folio(folio) ||
-		folio_test_large_rmappable(folio);
+		folio_test_rmappable(folio);
 }
 
 static unsigned long __thp_get_unmapped_area(struct file *filp,
@@ -3563,10 +3561,8 @@ static void __split_folio_to_order(struct folio *folio, int old_order,
 		 * which needs correct compound_head().
 		 */
 		clear_compound_head(new_head);
-		if (new_order) {
+		if (new_order)
 			prep_compound_page(new_head, new_order);
-			folio_set_large_rmappable(new_folio);
-		}
 
 		if (folio_test_young(folio))
 			folio_set_young(new_folio);

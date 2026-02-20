@@ -240,8 +240,7 @@ static inline void zone_device_folio_init(struct folio *folio,
 					  unsigned int order)
 {
 	zone_device_page_init(&folio->page, pgmap, order);
-	if (order)
-		folio_set_large_rmappable(folio);
+	page_rmappable_folio(&folio->page);
 }
 
 static inline void zone_device_private_split_cb(struct folio *original_folio,

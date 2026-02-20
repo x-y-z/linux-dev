@@ -190,7 +190,6 @@ enum pageflags {
 
 	/* At least one page in this folio has the hwpoison flag set */
 	PG_has_hwpoisoned = PG_active,
-	PG_large_rmappable = PG_workingset, /* anon or file-backed */
 	PG_partially_mapped = PG_reclaim, /* was identified to be partially mapped */
 };
 
@@ -881,10 +880,8 @@ static inline void ClearPageCompound(struct page *page)
 	BUG_ON(!PageHead(page));
 	ClearPageHead(page);
 }
-FOLIO_FLAG(large_rmappable, FOLIO_SECOND_PAGE)
 FOLIO_FLAG(partially_mapped, FOLIO_SECOND_PAGE)
 #else
-FOLIO_FLAG_FALSE(large_rmappable)
 FOLIO_FLAG_FALSE(partially_mapped)
 #endif
 
@@ -1109,6 +1106,15 @@ static inline bool folio_test_rmappable(const struct folio *folio)
 	return !folio_has_type(folio);
 }
 
+static inline struct folio *page_rmappable_folio(struct page *page)
+{
+	struct folio *folio = (struct folio *)page;
+
+	if (folio)
+		__ClearPageNotRmappable(page);
+	return folio;
+}
+
 /*
  * Check if a page is currently marked HWPoisoned. Note that this check is
  * best effort only and inherently racy: there is no way to synchronize with
@@ -1247,7 +1253,7 @@ static __always_inline void __ClearPageAnonExclusive(struct page *page)
  */
 #define PAGE_FLAGS_SECOND						\
 	(0xffUL /* order */		| 1UL << PG_has_hwpoisoned |	\
-	 1UL << PG_large_rmappable	| 1UL << PG_partially_mapped)
+	 1UL << PG_partially_mapped)
 
 #define PAGE_FLAGS_PRIVATE				\
 	(1UL << PG_private | 1UL << PG_private_2)

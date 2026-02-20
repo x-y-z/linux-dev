@@ -812,7 +812,7 @@ static int migrate_vma_insert_huge_pmd_page(struct migrate_vma *migrate,
 		return ret;
 
 	folio_set_order(folio, HPAGE_PMD_ORDER);
-	folio_set_large_rmappable(folio);
+	page_rmappable_folio(&folio->page);
 
 	if (mem_cgroup_charge(folio, migrate->vma->vm_mm, gfp)) {
 		count_vm_event(THP_FAULT_FALLBACK);

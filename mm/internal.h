@@ -835,7 +835,7 @@ static inline void folio_set_order(struct folio *folio, unsigned int order)
 bool __folio_unqueue_deferred_split(struct folio *folio);
 static inline bool folio_unqueue_deferred_split(struct folio *folio)
 {
-	if (folio_order(folio) <= 1 || !folio_test_large_rmappable(folio))
+	if (folio_order(folio) <= 1 || !folio_test_rmappable(folio))
 		return false;
 
 	/*
@@ -847,18 +847,6 @@ static inline bool folio_unqueue_deferred_split(struct folio *folio)
 		return false;
 
 	return __folio_unqueue_deferred_split(folio);
-}
-
-static inline struct folio *page_rmappable_folio(struct page *page)
-{
-	struct folio *folio = (struct folio *)page;
-
-	if (folio) {
-		__ClearPageNotRmappable(page);
-		if (folio_test_large(folio))
-			folio_set_large_rmappable(folio);
-	}
-	return folio;
 }
 
 static inline void prep_compound_head(struct page *page, unsigned int order)

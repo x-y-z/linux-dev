@@ -188,7 +188,7 @@ u64 stable_page_flags(const struct page *page)
 	if (folio_test_hugetlb(folio))
 		u |= 1 << KPF_HUGE;
 	else if (folio_test_large(folio) &&
-	         folio_test_large_rmappable(folio)) {
+	         folio_test_rmappable(folio)) {
 		/* Note: we indicate any THPs here, not just PMD-sized ones */
 		u |= 1 << KPF_THP;
 	} else if (is_huge_zero_pfn(ps.pfn)) {
