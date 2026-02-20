@@ -934,6 +934,7 @@ enum pagetype {
 	PGTY_zsmalloc		= 0xf6,
 	PGTY_unaccepted		= 0xf7,
 	PGTY_large_kmalloc	= 0xf8,
+	PGTY_not_rmappable	= 0xf9,
 
 	PGTY_mapcount_underflow = 0xff
 };
@@ -968,7 +969,8 @@ static __always_inline void __folio_set_##fname(struct folio *folio)	\
 {									\
 	if (folio_test_##fname(folio))					\
 		return;							\
-	VM_BUG_ON_FOLIO(data_race(folio->page.page_type) != UINT_MAX,	\
+	VM_BUG_ON_FOLIO(data_race(folio->page.page_type >> 24) !=	\
+				PGTY_not_rmappable,			\
 			folio);						\
 	folio->page.page_type = (unsigned int)PGTY_##lname << 24;	\
 }									\
@@ -988,9 +990,11 @@ static __always_inline int Page##uname(const struct page *page)		\
 }									\
 static __always_inline void __SetPage##uname(struct page *page)		\
 {									\
+	uint page_type = data_race(page->page_type);			\
 	if (Page##uname(page))						\
 		return;							\
-	VM_BUG_ON_PAGE(data_race(page->page_type) != UINT_MAX, page);	\
+	VM_BUG_ON_PAGE(page_type != UINT_MAX &&				\
+		       (page_type >> 24) != PGTY_not_rmappable, page);	\
 	page->page_type = (unsigned int)PGTY_##lname << 24;		\
 }									\
 static __always_inline void __ClearPage##uname(struct page *page)	\
@@ -1070,6 +1074,7 @@ PAGE_TYPE_OPS(Zsmalloc, zsmalloc, zsmalloc)
  */
 PAGE_TYPE_OPS(Unaccepted, unaccepted, unaccepted)
 PAGE_TYPE_OPS(LargeKmalloc, large_kmalloc, large_kmalloc)
+PAGE_TYPE_OPS(NotRmappable, not_rmappable, not_rmappable)
 
 /**
  * PageHuge - Determine if the page belongs to hugetlbfs
@@ -1082,6 +1087,26 @@ PAGE_TYPE_OPS(LargeKmalloc, large_kmalloc, large_kmalloc)
 static inline bool PageHuge(const struct page *page)
 {
 	return folio_test_hugetlb(page_folio(page));
+}
+
+/**
+ * folio_test_rmappable - Determine if the folio can have a reverse mapping
+ * @folio: the folio to test.
+ *
+ * This check works based on following conditions:
+ * 1. post_alloc_hook() always set a new page with NotRmappable page_type,
+ * 2. any page_type can overwrite NotRmappable,
+ * 3. a page/folio with a page_type cannot have a reverse mapping (i.e., anon
+ *    or file-backed),
+ * 4. hugetlb has its own rmap code.
+ *
+ * Context: any context.
+ * Return: True if the folio can have reverse mapping, thus can show up in
+ * rmap.c, false otherwise.
+ */
+static inline bool folio_test_rmappable(const struct folio *folio)
+{
+	return !folio_has_type(folio);
 }
 
 /*

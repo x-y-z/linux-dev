@@ -61,6 +61,8 @@ static void tlb_flush_rmap_batch(struct mmu_gather_batch *batch, struct vm_area_
 			struct page *page = encoded_page_ptr(enc);
 			unsigned int nr_pages = 1;
 
+			VM_WARN_ON_ONCE(!folio_test_rmappable(page_folio(page)));
+
 			if (unlikely(encoded_page_flags(enc) &
 				     ENCODED_PAGE_BIT_NR_PAGES_NEXT))
 				nr_pages = encoded_nr_pages(pages[++i]);

@@ -56,6 +56,8 @@ static const char *page_type_names[] = {
 	DEF_PAGETYPE_NAME(table),
 	DEF_PAGETYPE_NAME(buddy),
 	DEF_PAGETYPE_NAME(unaccepted),
+	DEF_PAGETYPE_NAME(large_kmalloc),
+	DEF_PAGETYPE_NAME(not_rmappable),
 };
 
 static const char *page_type_name(unsigned int page_type)

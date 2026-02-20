@@ -1078,7 +1078,8 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 
 	*prealloc = NULL;
 	__folio_mark_uptodate(new_folio);
-	folio_add_new_anon_rmap(new_folio, dst_vma, addr, RMAP_EXCLUSIVE);
+	if (folio_test_rmappable(page_folio(page)))
+		folio_add_new_anon_rmap(new_folio, dst_vma, addr, RMAP_EXCLUSIVE);
 	folio_add_lru_vma(new_folio, dst_vma);
 	rss[MM_ANONPAGES]++;
 
@@ -1152,15 +1153,18 @@ copy_present_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 		nr = folio_pte_batch_flags(folio, src_vma, src_pte, &pte, max_nr, flags);
 		folio_ref_add(folio, nr);
 		if (folio_test_anon(folio)) {
-			if (unlikely(folio_try_dup_anon_rmap_ptes(folio, page,
-								  nr, dst_vma, src_vma))) {
+			if (unlikely(!folio_test_rmappable(folio) ||
+				     folio_try_dup_anon_rmap_ptes(folio, page,
+								  nr, dst_vma,
+								  src_vma))) {
 				folio_ref_sub(folio, nr);
 				return -EAGAIN;
 			}
 			rss[MM_ANONPAGES] += nr;
 			VM_WARN_ON_FOLIO(PageAnonExclusive(page), folio);
 		} else {
-			folio_dup_file_rmap_ptes(folio, page, nr, dst_vma);
+			if (folio_test_rmappable(folio))
+				folio_dup_file_rmap_ptes(folio, page, nr, dst_vma);
 			rss[mm_counter_file(folio)] += nr;
 		}
 		__copy_present_ptes(dst_vma, src_vma, dst_pte, src_pte, pte,
@@ -1176,17 +1180,21 @@ copy_present_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 		 * guarantee the pinned page won't be randomly replaced in the
 		 * future.
 		 */
-		if (unlikely(folio_try_dup_anon_rmap_pte(folio, page, dst_vma, src_vma))) {
+		if (unlikely(!folio_test_rmappable(folio) ||
+			     folio_try_dup_anon_rmap_pte(folio, page, dst_vma,
+							 src_vma))) {
 			/* Page may be pinned, we have to copy. */
 			folio_put(folio);
-			err = copy_present_page(dst_vma, src_vma, dst_pte, src_pte,
-						addr, rss, prealloc, page);
+			err = copy_present_page(dst_vma, src_vma, dst_pte,
+						src_pte, addr, rss, prealloc,
+						page);
 			return err ? err : 1;
 		}
 		rss[MM_ANONPAGES]++;
 		VM_WARN_ON_FOLIO(PageAnonExclusive(page), folio);
 	} else {
-		folio_dup_file_rmap_pte(folio, page, dst_vma);
+		if (folio_test_rmappable(folio))
+			folio_dup_file_rmap_pte(folio, page, dst_vma);
 		rss[mm_counter_file(folio)]++;
 	}
 
@@ -1643,7 +1651,7 @@ static __always_inline void zap_present_folio_ptes(struct mmu_gather *tlb,
 		ptent = get_and_clear_full_ptes(mm, addr, pte, nr, tlb->fullmm);
 		if (pte_dirty(ptent)) {
 			folio_mark_dirty(folio);
-			if (tlb_delay_rmap(tlb)) {
+			if (tlb_delay_rmap(tlb) && folio_test_rmappable(folio)) {
 				delay_rmap = true;
 				*force_flush = true;
 			}
@@ -1663,7 +1671,8 @@ static __always_inline void zap_present_folio_ptes(struct mmu_gather *tlb,
 		*any_skipped = zap_install_uffd_wp_if_needed(vma, addr, pte,
 							     nr, details, ptent);
 
-	if (!delay_rmap) {
+	if (!delay_rmap && folio_test_rmappable(folio)) {
+
 		folio_remove_rmap_ptes(folio, page, nr, vma);
 
 		if (unlikely(folio_mapcount(folio) < 0))
@@ -2332,7 +2341,8 @@ static int validate_page_before_insert(struct vm_area_struct *vma,
 			return -EINVAL;
 		return 0;
 	}
-	if (folio_test_anon(folio) || folio_has_type(folio))
+	if (folio_test_anon(folio) ||
+	    (folio_has_type(folio) && !folio_test_not_rmappable(folio)))
 		return -EINVAL;
 	flush_dcache_folio(folio);
 	return 0;
@@ -2373,7 +2383,8 @@ static int insert_page_into_pte_locked(struct vm_area_struct *vma, pte_t *pte,
 			pteval = maybe_mkwrite(pte_mkdirty(pteval), vma);
 		}
 		inc_mm_counter(vma->vm_mm, mm_counter_file(folio));
-		folio_add_file_rmap_pte(folio, page, vma);
+		if (folio_test_rmappable(folio))
+			folio_add_file_rmap_pte(folio, page, vma);
 	}
 	set_pte_at(vma->vm_mm, addr, pte, pteval);
 	return 0;
@@ -5459,7 +5470,8 @@ vm_fault_t do_set_pmd(struct vm_fault *vmf, struct folio *folio, struct page *pa
 		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
 
 	add_mm_counter(vma->vm_mm, mm_counter_file(folio), HPAGE_PMD_NR);
-	folio_add_file_rmap_pmd(folio, page, vma);
+	if (folio_test_rmappable(folio))
+		folio_add_file_rmap_pmd(folio, page, vma);
 
 	/*
 	 * deposit and withdraw with pmd lock held
@@ -5518,10 +5530,12 @@ void set_pte_range(struct vm_fault *vmf, struct folio *folio,
 	/* copy-on-write page */
 	if (write && !(vma->vm_flags & VM_SHARED)) {
 		VM_BUG_ON_FOLIO(nr != 1, folio);
-		folio_add_new_anon_rmap(folio, vma, addr, RMAP_EXCLUSIVE);
+		if (folio_test_rmappable(folio))
+			folio_add_new_anon_rmap(folio, vma, addr, RMAP_EXCLUSIVE);
 		folio_add_lru_vma(folio, vma);
 	} else {
-		folio_add_file_rmap_ptes(folio, page, nr, vma);
+		if (folio_test_rmappable(folio))
+			folio_add_file_rmap_ptes(folio, page, nr, vma);
 	}
 	set_ptes(vma->vm_mm, addr, vmf->pte, entry, nr);
 

@@ -1889,6 +1889,7 @@ inline void post_alloc_hook(struct page *page, unsigned int order,
 	set_page_owner(page, order, gfp_flags);
 	page_table_check_alloc(page, order);
 	pgalloc_tag_add(page, current, 1 << order);
+	__SetPageNotRmappable(page);
 }
 
 static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,

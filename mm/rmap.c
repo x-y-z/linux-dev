@@ -1506,6 +1506,7 @@ static __always_inline void __folio_add_anon_rmap(struct folio *folio,
 {
 	int i;
 
+	VM_WARN_ON_ONCE(!folio_test_rmappable(folio));
 	VM_WARN_ON_FOLIO(!folio_test_anon(folio), folio);
 
 	__folio_add_rmap(folio, page, nr_pages, vma, level);
@@ -1688,6 +1689,7 @@ static __always_inline void __folio_add_file_rmap(struct folio *folio,
 		struct page *page, int nr_pages, struct vm_area_struct *vma,
 		enum pgtable_level level)
 {
+	VM_WARN_ON_ONCE(!folio_test_rmappable(folio));
 	VM_WARN_ON_FOLIO(folio_test_anon(folio), folio);
 
 	__folio_add_rmap(folio, page, nr_pages, vma, level);
@@ -1768,6 +1770,7 @@ static __always_inline void __folio_remove_rmap(struct folio *folio,
 	int last = 0, nr = 0, nr_pmdmapped = 0;
 	bool partially_mapped = false;
 
+	VM_WARN_ON_ONCE(!folio_test_rmappable(folio));
 	__folio_rmap_sanity_checks(folio, page, nr_pages, level);
 
 	switch (level) {

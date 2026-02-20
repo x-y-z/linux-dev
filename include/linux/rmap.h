@@ -135,6 +135,7 @@ static inline void folio_set_mm_id(struct folio *folio, int idx, mm_id_t id)
 static inline void __folio_large_mapcount_sanity_checks(const struct folio *folio,
 		int diff, mm_id_t mm_id)
 {
+	VM_WARN_ON_ONCE(!folio_test_rmappable(folio));
 	VM_WARN_ON_ONCE(!folio_test_large(folio) || folio_test_hugetlb(folio));
 	VM_WARN_ON_ONCE(diff <= 0);
 	VM_WARN_ON_ONCE(mm_id < MM_ID_MIN || mm_id > MM_ID_MAX);
@@ -331,20 +332,19 @@ typedef int __bitwise rmap_t;
 static __always_inline void __folio_rmap_sanity_checks(const struct folio *folio,
 		const struct page *page, int nr_pages, enum pgtable_level level)
 {
+	/*
+	 * we get driver-allocated folios that have nothing to do with
+	 * the rmap using vm_insert_page(). We should handle any desired stats
+	 * accounting for these folios in VM_MIXEDMAP VMAs separately, and then
+	 * sanity-check here that we really only get rmappable folios.
+	 */
+	VM_WARN_ON_ONCE(!folio_test_rmappable(folio));
+
 	/* hugetlb folios are handled separately. */
 	VM_WARN_ON_FOLIO(folio_test_hugetlb(folio), folio);
 
 	/* When (un)mapping zeropages, we should never touch ref+mapcount. */
 	VM_WARN_ON_FOLIO(is_zero_folio(folio), folio);
-
-	/*
-	 * TODO: we get driver-allocated folios that have nothing to do with
-	 * the rmap using vm_insert_page(); therefore, we cannot assume that
-	 * folio_test_large_rmappable() holds for large folios. We should
-	 * handle any desired mapcount+stats accounting for these folios in
-	 * VM_MIXEDMAP VMAs separately, and then sanity-check here that
-	 * we really only get rmappable folios.
-	 */
 
 	VM_WARN_ON_ONCE(nr_pages <= 0);
 	VM_WARN_ON_FOLIO(page_folio(page) != folio, folio);
