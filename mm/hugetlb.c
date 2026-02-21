@@ -1422,8 +1422,8 @@ static struct folio *alloc_gigantic_frozen_folio(int order, gfp_t gfp_mask,
 	if (hugetlb_cma_exclusive_alloc())
 		return NULL;
 
-	folio = (struct folio *)alloc_contig_frozen_pages(1 << order, gfp_mask,
-							  nid, nodemask);
+	folio = page_hugetlb_folio(alloc_contig_frozen_pages(1 << order, gfp_mask,
+							  nid, nodemask));
 	return folio;
 }
 #else /* !CONFIG_ARCH_HAS_GIGANTIC_PAGE || !CONFIG_CONTIG_ALLOC */
@@ -1780,15 +1780,6 @@ static void account_new_hugetlb_folio(struct hstate *h, struct folio *folio)
 	h->nr_huge_pages_node[folio_nid(folio)]++;
 }
 
-void init_new_hugetlb_folio(struct folio *folio)
-{
-	__folio_set_hugetlb(folio);
-	INIT_LIST_HEAD(&folio->lru);
-	hugetlb_set_folio_subpool(folio, NULL);
-	set_hugetlb_cgroup(folio, NULL);
-	set_hugetlb_cgroup_rsvd(folio, NULL);
-}
-
 /*
  * Find and lock address space (mapping) in write mode.
  *
@@ -1827,7 +1818,7 @@ static struct folio *alloc_buddy_frozen_folio(int order, gfp_t gfp_mask,
 	if (alloc_try_hard)
 		gfp_mask |= __GFP_RETRY_MAYFAIL;
 
-	folio = (struct folio *)__alloc_frozen_pages(gfp_mask, order, nid, nmask);
+	folio = page_hugetlb_folio(__alloc_frozen_pages(gfp_mask, order, nid, nmask));
 
 	/*
 	 * If we did not specify __GFP_RETRY_MAYFAIL, but still got a
@@ -1869,8 +1860,6 @@ static struct folio *only_alloc_fresh_hugetlb_folio(struct hstate *h,
 	else
 		folio = alloc_buddy_frozen_folio(order, gfp_mask, nid, nmask,
 						 node_alloc_noretry);
-	if (folio)
-		init_new_hugetlb_folio(folio);
 	return folio;
 }
 
@@ -3331,7 +3320,7 @@ static void __init gather_bootmem_prealloc_node(unsigned long nid)
 
 		hugetlb_folio_init_vmemmap(folio, h,
 					   HUGETLB_VMEMMAP_RESERVE_PAGES);
-		init_new_hugetlb_folio(folio);
+		page_hugetlb_folio(&folio->page);
 
 		if (hugetlb_bootmem_page_prehvo(m))
 			/*
@@ -3977,8 +3966,8 @@ static long demote_free_hugetlb_folios(struct hstate *src, struct hstate *dst,
 			clear_compound_head(page);
 			prep_compound_page(page, dst->order);
 
+			new_folio = page_hugetlb_folio(page);
 			new_folio->mapping = NULL;
-			init_new_hugetlb_folio(new_folio);
 			/* Copy the CMA flag so that it is freed correctly */
 			if (cma)
 				folio_set_hugetlb_cma(new_folio);

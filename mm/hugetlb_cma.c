@@ -11,6 +11,7 @@
 #include <linux/hugetlb.h>
 #include "internal.h"
 #include "hugetlb_cma.h"
+#include "hugetlb_internal.h"
 
 
 static struct cma *hugetlb_cma[MAX_NUMNODES] __ro_after_init;
@@ -51,7 +52,7 @@ struct folio *hugetlb_cma_alloc_frozen_folio(int order, gfp_t gfp_mask,
 	if (!page)
 		return NULL;
 
-	folio = page_folio(page);
+	folio = page_hugetlb_folio(page);
 	folio_set_hugetlb_cma(folio);
 	return folio;
 }

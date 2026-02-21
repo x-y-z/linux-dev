@@ -10,6 +10,25 @@
 #include <linux/hugetlb.h>
 #include <linux/hugetlb_cgroup.h>
 
+static inline struct folio* page_hugetlb_folio(struct page *page)
+{
+	struct folio *folio = (struct folio *)page;
+
+	if (folio) {
+		__folio_set_hugetlb(folio);
+		INIT_LIST_HEAD(&folio->lru);
+		hugetlb_set_folio_subpool(folio, NULL);
+		set_hugetlb_cgroup(folio, NULL);
+		set_hugetlb_cgroup_rsvd(folio, NULL);
+		atomic_set(&folio->_large_mapcount, -1);
+		if (IS_ENABLED(CONFIG_64BIT)) {
+			atomic_set(&folio->_pincount, 0);
+			atomic_set(&folio->_entire_mapcount, -1);
+		}
+	}
+	return folio;
+}
+
 /*
  * Check if the hstate represents gigantic pages but gigantic page
  * runtime support is not available. This is a common condition used to
