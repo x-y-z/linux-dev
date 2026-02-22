@@ -3564,6 +3564,8 @@ static void __split_folio_to_order(struct folio *folio, int old_order,
 		if (new_order)
 			prep_compound_page(new_head, new_order);
 
+		page_rmappable_folio(new_head);
+
 		if (folio_test_young(folio))
 			folio_set_young(new_folio);
 		if (folio_test_idle(folio))
