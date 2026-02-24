@@ -3768,10 +3768,9 @@ static unsigned int folio_cache_ref_count(const struct folio *folio)
 }
 
 static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int new_order,
-					     struct page *split_at, struct xa_state *xas,
-					     struct address_space *mapping, bool do_lru,
-					     struct list_head *list, enum split_type split_type,
-					     pgoff_t end, int *nr_shmem_dropped)
+		struct page *split_at, struct page *lock_at, struct xa_state *xas,
+		struct address_space *mapping, bool do_lru, struct list_head *list,
+		enum split_type split_type, pgoff_t end, int *nr_shmem_dropped)
 {
 	struct folio *end_folio = folio_next(folio);
 	struct folio *new_folio, *next;
@@ -3855,7 +3854,11 @@ static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int n
 			folio_ref_unfreeze(new_folio,
 					   folio_cache_ref_count(new_folio) + 1);
 
-			if (do_lru)
+			/*
+			 * skip @lock_at since caller wants to unlock and put it
+			 * after split
+			 */
+			if (do_lru && new_folio != page_folio(lock_at))
 				lru_add_split_folio(folio, new_folio, lruvec, list);
 
 			/*
@@ -3898,8 +3901,17 @@ static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int n
 		 */
 		folio_ref_unfreeze(folio, folio_cache_ref_count(folio) + 1);
 
-		if (do_lru)
+		if (do_lru) {
+			/*
+			 * caller wants to unlock and put @lock_at instead of
+			 * @folio, treat @folio as other after-split folios
+			 * by either elevating its refcount and putting it in
+			 * @list or putting it back to lru if @list is NULL.
+			 */
+			if (folio != page_folio(lock_at))
+				lru_add_split_folio(folio, folio, lruvec, list);
 			unlock_page_lruvec(lruvec);
+		}
 
 		if (ci)
 			swap_cluster_unlock(ci);
@@ -3925,14 +3937,13 @@ static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int n
  * preparing @folio for __split_unmapped_folio().
  *
  * After splitting, the after-split folio containing @lock_at remains locked
- * and others are unlocked:
- * 1. for uniform split, @lock_at points to one of @folio's subpages;
- * 2. for buddy allocator like (non-uniform) split, @lock_at points to @folio.
+ * and others are unlocked and the caller's folio reference is transferred to
+ * @lock_at's folio. @lock_at can point to anyone of @folio's subpages.
  *
  * Return: 0 - successful, <0 - failed (if -ENOMEM is returned, @folio might be
  * split but not to @new_order, the caller needs to check)
  */
-static int __folio_split(struct folio *folio, unsigned int new_order,
+static struct folio* __folio_split(struct folio *folio, unsigned int new_order,
 		struct page *split_at, struct page *lock_at,
 		struct list_head *list, enum split_type split_type)
 {
@@ -4052,8 +4063,10 @@ static int __folio_split(struct folio *folio, unsigned int new_order,
 		}
 	}
 
-	ret = __folio_freeze_and_split_unmapped(folio, new_order, split_at, &xas, mapping,
-						true, list, split_type, end, &nr_shmem_dropped);
+	ret = __folio_freeze_and_split_unmapped(folio, new_order, split_at,
+						lock_at, &xas, mapping, true,
+						list, split_type, end,
+						&nr_shmem_dropped);
 fail:
 	if (mapping)
 		xas_unlock(&xas);
@@ -4100,7 +4113,10 @@ out:
 	if (old_order == HPAGE_PMD_ORDER)
 		count_vm_event(!ret ? THP_SPLIT_PAGE : THP_SPLIT_PAGE_FAILED);
 	count_mthp_stat(old_order, !ret ? MTHP_STAT_SPLIT : MTHP_STAT_SPLIT_FAILED);
-	return ret;
+
+	if (!ret)
+		return page_folio(lock_at);
+	return (struct folio*)ERR_PTR(ret);
 }
 
 /**
@@ -4138,9 +4154,10 @@ int folio_split_unmapped(struct folio *folio, unsigned int new_order)
 		return -EAGAIN;
 
 	local_irq_disable();
-	ret = __folio_freeze_and_split_unmapped(folio, new_order, &folio->page, NULL,
-						NULL, false, NULL, SPLIT_TYPE_UNIFORM,
-						0, NULL);
+	ret = __folio_freeze_and_split_unmapped(folio, new_order, &folio->page,
+						&folio->page, NULL, NULL, false,
+						NULL, SPLIT_TYPE_UNIFORM, 0,
+						NULL);
 	local_irq_enable();
 	return ret;
 }
@@ -4196,9 +4213,14 @@ int __split_huge_page_to_list_to_order(struct page *page, struct list_head *list
 				     unsigned int new_order)
 {
 	struct folio *folio = page_folio(page);
+	struct folio *ret;
 
-	return __folio_split(folio, new_order, &folio->page, page, list,
+	ret = __folio_split(folio, new_order, &folio->page, page, list,
 			     SPLIT_TYPE_UNIFORM);
+	if (IS_ERR_VALUE(ret))
+		return PTR_ERR(ret);
+
+	return 0;
 }
 
 /**
@@ -4228,8 +4250,15 @@ int __split_huge_page_to_list_to_order(struct page *page, struct list_head *list
 int folio_split(struct folio *folio, unsigned int new_order,
 		struct page *split_at, struct list_head *list)
 {
-	return __folio_split(folio, new_order, split_at, &folio->page, list,
+	struct folio *ret;
+
+	ret = __folio_split(folio, new_order, split_at, &folio->page, list,
 			     SPLIT_TYPE_NON_UNIFORM);
+
+	if (IS_ERR_VALUE(ret))
+		return PTR_ERR(ret);
+
+	return 0;
 }
 
 /**
