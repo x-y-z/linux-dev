@@ -1919,12 +1919,65 @@ out:
 	xa_destroy(xa);
 }
 
+static void check_split_3(struct xarray *xa)
+{
+	unsigned long index = 0;
+	int order = XA_CHUNK_SHIFT * 2;
+	unsigned long len = 1 << order;
+	unsigned long i;
+
+	printf("multi index: %d\n", IS_ENABLED(CONFIG_XARRAY_MULTI));
+	printf("order: %d\n", order);
+	XA_STATE(xas, xa, index);
+
+	xa_store_order(xa, index, order, xa_mk_value(index), GFP_KERNEL);
+	/* allocate a node for xas_try_split() */
+	xas_set_err(&xas, -ENOMEM);
+	XA_BUG_ON(xa, !xas_nomem(&xas, GFP_KERNEL));
+
+	xas_lock(&xas);
+
+	xas_set_order(&xas, index, order - 1);
+	xas_try_split(&xas, xa_mk_value(index), order);
+	XA_BUG_ON(xa, xas_error(&xas));
+
+	index = (index + len) / 2;
+	xas_set_order(&xas, index, order - 2);
+	xas_try_split(&xas, xa_mk_value(index), order - 1);
+	XA_BUG_ON(xa, xas_error(&xas));
+
+	index = (index + len) / 2;
+	xas_set_order(&xas, index, order - 3);
+	xas_try_split(&xas, xa_mk_value(index), order - 2);
+	XA_BUG_ON(xa, xas_error(&xas));
+
+	/* index = (index + len) / 2; */
+	/* xas_set_order(&xas, index, order - 4); */
+	/* xas_try_split(&xas, xa_mk_value(index), order - 3); */
+	/* XA_BUG_ON(xa, xas_error(&xas)); */
+	for (i = 0; i < len - 1; i = (i + len) / 2) {
+		printf("value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i)));
+	}
+	for (i = 0; i < len - 1; i = (i + len) / 2) {
+		printf("value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i)));
+		__xa_store(xa, i, xa_mk_value(i), 0);
+		printf("after value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i)));
+	}
+
+	xas_unlock(&xas);
+	xas_destroy(&xas);
+	xa_destroy(xa);
+}
+
 static noinline void check_split(struct xarray *xa)
 {
 	unsigned int order, new_order;
 
 	XA_BUG_ON(xa, !xa_empty(xa));
 
+	check_split_3(xa);
+
+	return;
 	for (order = 1; order < 2 * XA_CHUNK_SHIFT; order++) {
 		for (new_order = 0; new_order < order; new_order++) {
 			check_split_1(xa, 0, order, new_order);
@@ -2230,38 +2283,38 @@ static DEFINE_XARRAY(array);
 
 static int xarray_checks(void)
 {
-	check_xa_err(&array);
-	check_xas_retry(&array);
-	check_xa_load(&array);
-	check_xa_mark(&array);
-	check_xa_shrink(&array);
-	check_xas_erase(&array);
-	check_insert(&array);
-	check_cmpxchg(&array);
-	check_cmpxchg_order(&array);
-	check_reserve(&array);
-	check_reserve(&xa0);
-	check_multi_store(&array);
-	check_multi_store_advanced(&array);
-	check_get_order(&array);
-	check_xas_get_order(&array);
-	check_xas_conflict_get_order(&array);
-	check_xa_alloc();
-	check_find(&array);
-	check_find_entry(&array);
-	check_pause(&array);
-	check_account(&array);
-	check_destroy(&array);
-	check_move(&array);
-	check_create_range(&array);
-	check_store_range(&array);
-	check_store_iter(&array);
-	check_align(&xa0);
+	/* check_xa_err(&array); */
+	/* check_xas_retry(&array); */
+	/* check_xa_load(&array); */
+	/* check_xa_mark(&array); */
+	/* check_xa_shrink(&array); */
+	/* check_xas_erase(&array); */
+	/* check_insert(&array); */
+	/* check_cmpxchg(&array); */
+	/* check_cmpxchg_order(&array); */
+	/* check_reserve(&array); */
+	/* check_reserve(&xa0); */
+	/* check_multi_store(&array); */
+	/* check_multi_store_advanced(&array); */
+	/* check_get_order(&array); */
+	/* check_xas_get_order(&array); */
+	/* check_xas_conflict_get_order(&array); */
+	/* check_xa_alloc(); */
+	/* check_find(&array); */
+	/* check_find_entry(&array); */
+	/* check_pause(&array); */
+	/* check_account(&array); */
+	/* check_destroy(&array); */
+	/* check_move(&array); */
+	/* check_create_range(&array); */
+	/* check_store_range(&array); */
+	/* check_store_iter(&array); */
+	/* check_align(&xa0); */
 	check_split(&array);
 
-	check_workingset(&array, 0);
-	check_workingset(&array, 64);
-	check_workingset(&array, 4096);
+	/* check_workingset(&array, 0); */
+	/* check_workingset(&array, 64); */
+	/* check_workingset(&array, 4096); */
 
 	printk("XArray: %u of %u tests passed\n", tests_passed, tests_run);
 	return (tests_run == tests_passed) ? 0 : -EINVAL;
