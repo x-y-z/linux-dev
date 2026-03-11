@@ -1931,38 +1931,74 @@ static void check_split_3(struct xarray *xa)
 	XA_STATE(xas, xa, index);
 
 	xa_store_order(xa, index, order, xa_mk_value(index), GFP_KERNEL);
+	printf("init, order: %d\n", order);
+	xa_dump(xa);
 	/* allocate a node for xas_try_split() */
 	xas_set_err(&xas, -ENOMEM);
 	XA_BUG_ON(xa, !xas_nomem(&xas, GFP_KERNEL));
 
 	xas_lock(&xas);
 
+	index = 0;
 	xas_set_order(&xas, index, order - 1);
 	xas_try_split(&xas, xa_mk_value(index), order);
 	XA_BUG_ON(xa, xas_error(&xas));
+	__xa_store(xa, 32, xa_mk_value(32), 0);
+	printf("split at index: %lu to order: %d\n", index, order - 1);
+	xa_dump(xa);
 
-	index = (index + len) / 2;
+	index = 32;
 	xas_set_order(&xas, index, order - 2);
 	xas_try_split(&xas, xa_mk_value(index), order - 1);
 	XA_BUG_ON(xa, xas_error(&xas));
+	__xa_store(xa, 48, xa_mk_value(48), 0);
+	printf("split at index: %lu to order: %d\n", index, order - 2);
+	xa_dump(xa);
 
-	index = (index + len) / 2;
+	index = 32;
 	xas_set_order(&xas, index, order - 3);
 	xas_try_split(&xas, xa_mk_value(index), order - 2);
 	XA_BUG_ON(xa, xas_error(&xas));
+	__xa_store(xa, 40, xa_mk_value(40), 0);
+	printf("split at index: %lu to order: %d\n", index, order - 3);
+	xa_dump(xa);
 
-	/* index = (index + len) / 2; */
-	/* xas_set_order(&xas, index, order - 4); */
-	/* xas_try_split(&xas, xa_mk_value(index), order - 3); */
-	/* XA_BUG_ON(xa, xas_error(&xas)); */
-	for (i = 0; i < len - 1; i = (i + len) / 2) {
+	/* allocate a node for xas_try_split() */
+	xas_set_err(&xas, -ENOMEM);
+	XA_BUG_ON(xa, !xas_nomem(&xas, GFP_KERNEL));
+
+	index = 32;
+	xas_set_order(&xas, index, order - 4);
+	xas_try_split(&xas, xa_mk_value(index), order - 3);
+	XA_BUG_ON(xa, xas_error(&xas));
+	__xa_store(xa, 36, xa_mk_value(36), 0);
+	printf("split at index: %lu to order: %d\n", index, order - 4);
+	xa_dump(xa);
+
+	index = 36;
+	xas_set_order(&xas, index, order - 5);
+	xas_try_split(&xas, xa_mk_value(index), order - 4);
+	XA_BUG_ON(xa, xas_error(&xas));
+	__xa_store(xa, 38, xa_mk_value(38), 0);
+	printf("split at index: %lu to order: %d\n", index, order - 5);
+	xa_dump(xa);
+
+	index = 38;
+	xas_set_order(&xas, index, order - 6);
+	xas_try_split(&xas, xa_mk_value(index), order - 5);
+	XA_BUG_ON(xa, xas_error(&xas));
+	__xa_store(xa, 39, xa_mk_value(39), 0);
+	printf("split at index: %lu to order: %d\n", index, order - 6);
+	xa_dump(xa);
+
+	for (i = 0; i < len; i++) {
 		printf("value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i)));
 	}
-	for (i = 0; i < len - 1; i = (i + len) / 2) {
-		printf("value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i)));
-		__xa_store(xa, i, xa_mk_value(i), 0);
-		printf("after value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i)));
-	}
+	/* for (i = 0; i < len; i++) { */
+	/*         printf("value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i))); */
+	/*         __xa_store(xa, i, xa_mk_value(i), 0); */
+	/*         printf("after value at index %ld: %ld\n", i, xa_to_value(xa_load(xa, i))); */
+	/* } */
 
 	xas_unlock(&xas);
 	xas_destroy(&xas);
