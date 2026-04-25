@@ -86,6 +86,9 @@ static inline bool file_thp_enabled(struct vm_area_struct *vma)
 {
 	struct inode *inode;
 
+	if (!IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS))
+		return false;
+
 	if (!vma->vm_file)
 		return false;
 
@@ -94,10 +97,7 @@ static inline bool file_thp_enabled(struct vm_area_struct *vma)
 	if (IS_ANON_FILE(inode))
 		return false;
 
-	if (!mapping_pmd_thp_support(inode->i_mapping))
-		return false;
-
-	return S_ISREG(inode->i_mode);
+	return !inode_is_open_for_write(inode) && S_ISREG(inode->i_mode);
 }
 
 /* If returns true, we are unable to access the VMA's folios. */
