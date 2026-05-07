@@ -446,10 +446,7 @@ static void file_fault_common(void *p, unsigned long start, unsigned long end,
 		int madv_ops)
 {
 	if (madvise(((char *)p) + start, end - start, madv_ops)) {
-		if (madv_ops == MADV_POPULATE_READ)
-			perror("madvise(MADV_POPULATE_READ");
-		else if (madv_ops == MADV_POPULATE_WRITE)
-			perror("madvise(MADV_POPULATE_WRITE");
+		perror("madvise(MADV_POPULATE_READ");
 		exit(EXIT_FAILURE);
 	}
 }
