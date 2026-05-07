@@ -2339,14 +2339,7 @@ static enum scan_result collapse_file(struct mm_struct *mm, unsigned long addr,
 				 * forcing writeback in loop.
 				 */
 				xas_unlock_irq(&xas);
-				/*
-				 * Only flush for read-only files. Writable
-				 * files can have their folios dirty at any
-				 * time; blindly flushing them would cause
-				 * undesirable system-wide writeback.
-				 */
-				if (!inode_is_open_for_write(mapping->host))
-					filemap_flush(mapping);
+				filemap_flush(mapping);
 				result = SCAN_PAGE_DIRTY_OR_WRITEBACK;
 				goto xa_unlocked;
 			} else if (folio_test_writeback(folio)) {
