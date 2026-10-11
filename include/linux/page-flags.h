@@ -101,7 +101,7 @@ enum pageflags {
 	PG_owner_2,		/* Owner use. If pagecache, fs may use */
 	PG_arch_1,
 	PG_reserved,
-	PG_folio,		/* Do not use: reserved for folio identification */
+	PG_folio,		/* Page belongs to an rmappable folio */
 	PG_private_2,		/* If pagecache, has fs aux data */
 	PG_reclaim,		/* To be reclaimed asap */
 	PG_swapbacked,		/* Page is backed by RAM/swap */
@@ -567,6 +567,21 @@ PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 FOLIO_FLAG(swapbacked, FOLIO_HEAD_PAGE)
 	__FOLIO_CLEAR_FLAG(swapbacked, FOLIO_HEAD_PAGE)
 	__FOLIO_SET_FLAG(swapbacked, FOLIO_HEAD_PAGE)
+
+static __always_inline int PageFolio(const struct page *page)
+{
+	return test_bit(PG_folio, &PF_ANY(page, 0)->flags.f);
+}
+
+static __always_inline void SetPageFolio(struct page *page)
+{
+	set_bit(PG_folio, &PF_ANY(page, 1)->flags.f);
+}
+
+static __always_inline void ClearPageFolio(struct page *page)
+{
+	clear_bit(PG_folio, &PF_ANY(page, 1)->flags.f);
+}
 
 /*
  * Private page markings that may be used by the filesystem that owns the page
